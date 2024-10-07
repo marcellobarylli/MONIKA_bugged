@@ -35,11 +35,11 @@ def parse_arguments():
     parser.add_argument("--omics", action="store_false", help="Set program type to omics ")
     parser.add_argument('--p', type=int, default=154, help='Number of variables (nodes)')
     parser.add_argument('--n', type=int, default=1337, help='Number of samples')
-    parser.add_argument('--Q', type=int, default=999, help='Number of sub-samples')
+    parser.add_argument('--Q', type=int, default=1000, help='Number of sub-samples')
     parser.add_argument('--b_perc', type=float, default=0.65, help='Size of sub-samples (as a percentage of n)')
     parser.add_argument('--llo', type=float, default=0.01, help='Lower bound for lambda range')
     parser.add_argument('--lhi', type=float, default=1.5, help='Upper bound for lambda range')
-    parser.add_argument('--lamlen', type=int, default=250, help='Number of points in lambda range')
+    parser.add_argument('--lamlen', type=int, default=500, help='Number of points in lambda range')
     parser.add_argument('--prior_conf', type=str, default=90, help='Confidence level of STRING prior')
     parser.add_argument('--fp_fn', type=float, default=0, help='Chance of getting a false negative or a false positive')
     parser.add_argument('--skew', type=float, default=0, help='Skewness of the data')
@@ -69,7 +69,7 @@ if not"SLURM_JOB_ID" in os.environ:
     plt.rc("text", usetex=False)
     plt.rc("font", family="serif")
 # original_stdout = sys.stdout
-# sys.stdout = open('Networks/net_results/Piglasso_Logs.txt', 'w')
+# sys.stdout = open('results/net_results/Piglasso_Logs.txt', 'w')
 
 
 
@@ -231,7 +231,7 @@ if __name__ == "__main__":
 
 
                 # Load omics edge counts
-                file_ = f'Networks/net_results/{omics_type}_{cms}_edge_counts_all_pnQ{p}_{n}_{Q}_{lowerbound}_{upperbound}_ll{lamlen}_b{b_perc}_fpfn{fp_fn}_skew{skew}_dens{synth_density}_s{seed}.pkl'
+                file_ = f'results/net_results/{omics_type}_{cms}_edge_counts_all_pnQ{p}_{n}_{Q}_{lowerbound}_{upperbound}_ll{lamlen}_b{b_perc}_fpfn{fp_fn}_skew{skew}_dens{synth_density}_s{seed}.pkl'
 
                 # Check if the file already exists
                 if os.path.exists(file_):
@@ -263,7 +263,8 @@ if __name__ == "__main__":
 
                 
                 # Load Omics Data
-                cms_array = pd.read_csv(f'data/{omics_type}_for_pig_{cms}.csv', index_col=0).values
+                cms_data = pd.read_csv(f'data/{omics_type}_for_pig_{cms}.csv', index_col=0)
+                cms_array = cms_data.values
 
                 # Load STRING prior edges and nodes
                 STRING_edges_df = pd.read_csv(f'data/prior_data/RPPA_prior_EDGES{prior_conf}perc.csv')
@@ -272,6 +273,11 @@ if __name__ == "__main__":
 
                 # # Construct the adjacency matrix from STRING
                 cms_omics_prior = STRING_adjacency_matrix(STRING_nodes_df, STRING_edges_df)
+                # write prior matrix to file
+                with open(f'data/prior_data/RPPA_prior_adj{prior_conf}perc.pkl', 'wb') as f:
+                    pickle.dump(cms_omics_prior, f)
+
+                print(f'---------------------------------------------------got dat RPPA_prior_adj{prior_conf}perc.pkl')
 
                 if prior_bool == True:
                     # print density of prior
@@ -353,31 +359,31 @@ if __name__ == "__main__":
                         tau_trs.append(tau_tr)
                     
                     # write densities to file
-                    with open(f'Networks/net_results/endslice_densities_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
+                    with open(f'results/net_results/endslice_densities_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
                         pickle.dump(densities, f)
                     # write np_lams to file
-                    with open(f'Networks/net_results/endslice_np_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
+                    with open(f'results/net_results/endslice_np_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
                         pickle.dump(np_lams, f)
                     # write wp_lams to file
-                    with open(f'Networks/net_results/endslice_wp_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
+                    with open(f'results/net_results/endslice_wp_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
                         pickle.dump(wp_lams, f)
                     # write tau_trs to file
-                    with open(f'Networks/net_results/endslice_tau_trs_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
+                    with open(f'results/net_results/endslice_tau_trs_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'wb') as f:
                         pickle.dump(tau_trs, f)
 
 
                     # # # 
                 
                     # Load np_lams and wp_lams from file
-                    with open(f'Networks/net_results/endslice_np_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
+                    with open(f'results/net_results/endslice_np_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
                         np_lams = pickle.load(f)
-                    with open(f'Networks/net_results/endslice_wp_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
+                    with open(f'results/net_results/endslice_wp_lams_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
                         wp_lams = pickle.load(f)
 
                     # Load tau_trs and densities from file
-                    with open(f'Networks/net_results/endslice_tau_trs_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
+                    with open(f'results/net_results/endslice_tau_trs_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
                         tau_trs = pickle.load(f)
-                    with open(f'Networks/net_results/endslice_densities_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
+                    with open(f'results/net_results/endslice_densities_{omics_type}_{cms}_Q{Q}_prior{prior_bool}_slices{len(slicer_range)}.pkl', 'rb') as f:
                         densities = pickle.load(f)
 
                     # Create a figure with 3 subplots
@@ -427,14 +433,15 @@ if __name__ == "__main__":
                 adj_matrix = pd.DataFrame(adj_matrix, index=cms_data.columns, columns=cms_data.columns)
 
                 # save inferred network as adjacency matrix
-                adj_matrix.to_csv(f'Networks/net_results/inferred_adjacencies/{omics_type}_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv')
+                adj_matrix.to_csv(f'results/net_results/inferred_adjacencies/{omics_type}_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv')
+        print('Finished saving adjacency matrices for all omics layers and cms types (aggressive and non-mesenchymal).\n\n')
 
 
 
-        proteomics_ALL_net = pd.read_csv(f'Networks/net_results/inferred_adjacencies/proteomics_cmsALL_adj_matrix_p154_Lambda_np{not man}.csv', index_col=0)
-        transcriptomics_ALL_net = pd.read_csv(f'Networks/net_results/inferred_adjacencies/transcriptomics_cmsALL_adj_matrix_p154_Lambda_np{not man}.csv', index_col=0)
-        proteomics_123_net = pd.read_csv(f'Networks/net_results/inferred_adjacencies/proteomics_cms123_adj_matrix_p154_Lambda_np{not man}.csv', index_col=0)
-        transcriptomics_123_net = pd.read_csv(f'Networks/net_results/inferred_adjacencies/transcriptomics_cms123_adj_matrix_p154_Lambda_np{not man}.csv', index_col=0)
+        proteomics_ALL_net = pd.read_csv(f'results/net_results/inferred_adjacencies/proteomics_cmsALL_adj_matrix_p154_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
+        transcriptomics_ALL_net = pd.read_csv(f'results/net_results/inferred_adjacencies/transcriptomics_cmsALL_adj_matrix_p154_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
+        proteomics_123_net = pd.read_csv(f'results/net_results/inferred_adjacencies/proteomics_cms123_adj_matrix_p154_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
+        transcriptomics_123_net = pd.read_csv(f'results/net_results/inferred_adjacencies/transcriptomics_cms123_adj_matrix_p154_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
 
         # compare similarity of all networks to each other
         proteomics_ALL_net = proteomics_ALL_net.values
@@ -452,8 +459,9 @@ if __name__ == "__main__":
         print(f'Similarity of proteomics_123_net to transcriptomics_123_net: {evaluate_reconstruction(proteomics_123_net, transcriptomics_123_net)}')
 
 
-        # Read the prior file
-        prior = pd.read_csv('Diffusion/data/RPPA_prior_adj90perc.csv', index_col=0)
+        # Read pkl prior file
+        with open('data/prior_data/RPPA_prior_adj90perc.pkl', 'rb') as f:
+            prior = pickle.load(f)
 
         print('\n --------------------------------')
         # get similarity of prior to each network
@@ -502,11 +510,6 @@ if __name__ == "__main__":
         f1_scores = {}
         recall_scores = {}
 
-        if "SLURM_JOB_ID" not in os.environ:
-            dir_prefix = 'Networks/'
-        else:
-            dir_prefix = ''
-
         if args.run_synth == True:
             def worker_function(params):
                 """
@@ -535,7 +538,7 @@ if __name__ == "__main__":
                 b = int(b_perc * n)
                 
                 # Construct filename for edge counts
-                filename_edges = f'{dir_prefix}net_results/synthetic_cmsALL_edge_counts_all_pnQ{p}_{n}_{Q}_{llo}_{lhi}_ll{lamlen}_b{b_perc}_fpfn0.0_skew0_dens{dens}_s{seed}.pkl'
+                filename_edges = f'results/net_results/synthetic_cmsALL_edge_counts_all_pnQ{p}_{n}_{Q}_{llo}_{lhi}_ll{lamlen}_b{b_perc}_fpfn0.0_skew0_dens{dens}_s{seed}.pkl'
                 param_key = (p, n, b_perc, fp_fn, seed, dens, str(man))
 
                 if not os.path.isfile(filename_edges):
@@ -612,7 +615,7 @@ if __name__ == "__main__":
                 } for result in results if result is not None}
 
             # save to file
-            with open(f'{dir_prefix}net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}_withjaccetc1000.pkl', 'wb') as f:
+            with open(f'results/net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}_withjaccetc1000.pkl', 'wb') as f:
                 pickle.dump(organized_results, f)
 
             print("Organized results saved.")
@@ -630,7 +633,7 @@ if __name__ == "__main__":
         # argparse arg for synthetic post_process
         if args.post_process == True:
             # Load the organized results
-            with open(f'{dir_prefix}net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}_withjaccetc1000.pkl', 'rb') as f:
+            with open(f'results/net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}_withjaccetc1000.pkl', 'rb') as f:
                 organized_results = pickle.load(f)
 
             # Loop over parameter combinations
@@ -675,10 +678,10 @@ if __name__ == "__main__":
                     'tau_tr', 'lambda_np', 'lambda_wp', 'overlap']
 
             for metric in metrics:
-                with open(f'{dir_prefix}net_results/net_results_sweep/average_{metric}_scores.pkl', 'wb') as f:
+                with open(f'results/net_results/net_results_sweep/average_{metric}_scores.pkl', 'wb') as f:
                     pickle.dump(average_scores[metric], f)
 
-                with open(f'{dir_prefix}net_results/net_results_sweep/SD_{metric}_scores.pkl', 'wb') as f:
+                with open(f'results/net_results/net_results_sweep/SD_{metric}_scores.pkl', 'wb') as f:
                     pickle.dump(SD_scores[metric], f)
 
 
@@ -687,8 +690,8 @@ if __name__ == "__main__":
                 'tau_tr', 'lambda_np', 'lambda_wp', 'overlap']
 
         for metric in metrics:
-            avg_file = f'{dir_prefix}net_results/net_results_sweep/average_{metric}_scores.pkl'
-            sd_file = f'{dir_prefix}net_results/net_results_sweep/SD_{metric}_scores.pkl'
+            avg_file = f'results/net_results/net_results_sweep/average_{metric}_scores.pkl'
+            sd_file = f'results/net_results/net_results_sweep/SD_{metric}_scores.pkl'
             
             if os.path.exists(avg_file):
                 with open(avg_file, 'rb') as f:
@@ -752,7 +755,7 @@ if __name__ == "__main__":
 
             plt.suptitle(f'Performance Metrics vs b_perc (n={n}, p={p})', fontsize=16)
             plt.tight_layout()
-            plt.savefig(f'{dir_prefix}net_results/net_results_sweep/b_perc_plot.svg')
+            plt.savefig(f'results/net_results/net_results_sweep/b_perc_plot.svg')
             plt.show()
 
 
@@ -813,13 +816,13 @@ if __name__ == "__main__":
 
             plt.suptitle(f'Performance Metrics vs Sample Size (b_perc={b_perc}, p={p})', fontsize=16)  # Add overall title
             plt.tight_layout()
-            plt.savefig(f'{dir_prefix}net_results/net_results_sweep/n_value_plot.svg')
+            plt.savefig(f'results/net_results/net_results_sweep/n_value_plot.svg')
             plt.show()
 
 
             # PLOTTING PRIOR OVERLAP VS TAU_TR
             # Load organized results
-            with open(f'{dir_prefix}net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}.pkl', 'rb') as f:
+            with open(f'results/net_results/net_results_sweep/organized_SWEEP_results_n{len(n_values)}.pkl', 'rb') as f:
                 organized_results = pickle.load(f)
 
             # Organize data by 'overlap', excluding cases where overlap is 0.0
@@ -865,7 +868,7 @@ if __name__ == "__main__":
             plt.suptitle(r'Prior Overlap vs. $\tau^{tr}$')
             plt.tight_layout()
 
-            plt.savefig(f'{dir_prefix}net_results/net_results_sweep/tau_tr_vs_overlap.svg')
+            plt.savefig(f'results/net_results/net_results_sweep/tau_tr_vs_overlap.svg')
             plt.show()
 
     # sys.stdout.close()

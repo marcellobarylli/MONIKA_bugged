@@ -400,24 +400,37 @@ def mainpig(p, n, Q, llo, lhi, lamlen, b_perc, fp_fn, skew, synth_density, prior
         p = cms_data.shape[1]
         cms_array = cms_data.values
 
-        # LOADING PRIOR
-        # Loading Edges and Nodes with 90% or above confidence according to STRING
-        STRING_edges_df = pd.read_csv(f'data/prior_data/RPPA_prior_EDGES{prior_conf}perc.csv')
-        STRING_nodes_df = pd.read_csv(f'data/prior_data/RPPA_prior_NODES{prior_conf}perc.csv')
-
-
-        # # Construct the adjacency matrix from STRING
-        cms_omics_prior = STRING_adjacency_matrix(STRING_nodes_df, STRING_edges_df)
-
-        prior_matrix = cms_omics_prior.values
+        # scale and center 
+        cms_array = (cms_array - cms_array.mean(axis=0)) / cms_array.std(axis=0)
 
         n = cms_array.shape[0]
         b = int(b_perc * n)
+      
 
         print(f'Variables, Samples: {p, n}')
 
-        # scale and center 
-        cms_array = (cms_array - cms_array.mean(axis=0)) / cms_array.std(axis=0)
+        # LOADING PRIOR
+        # Loading Edges and Nodes with 90% or above confidence according to STRING
+        edges_file = f'data/prior_data/RPPA_prior_EDGES{prior_conf}perc.csv'
+        nodes_file = f'data/prior_data/RPPA_prior_NODES{prior_conf}perc.csv'
+
+        if os.path.exists(edges_file) and os.path.exists(nodes_file):
+            # Loading Edges and Nodes with 90% or above confidence according to STRING
+            STRING_edges_df = pd.read_csv(edges_file)
+            STRING_nodes_df = pd.read_csv(nodes_file)
+
+            # Construct the adjacency matrix from STRING
+            cms_omics_prior = STRING_adjacency_matrix(STRING_nodes_df, STRING_edges_df)
+            prior_matrix = cms_omics_prior.values
+
+            # write prior matrix to file
+            with open(f'data/prior_data/RPPA_prior_adj{prior_conf}perc.pkl', 'wb') as f:
+                pickle.dump(prior_matrix, f)
+        else:
+            print(f"Warning: One or both prior files not found. Using empty prior matrix.")
+            # Generate an empty numpy array of the same shape as cms_array
+            prior_matrix = np.zeros((cms_array.shape[1], cms_array.shape[1]))
+
         # run QJ Sweeper
         omics_QJ = QJSweeper(cms_array, prior_matrix, b, Q, rank, size, seed=seed)
 
@@ -492,12 +505,12 @@ if __name__ == "__main__":
 
 
             # Save combined results
-            with open(f'net_results/{args.run_type}_{args.cms}_edge_counts_all_pnQ{args.p}_{args.n}_{args.Q}_{args.llo}_{args.lhi}_ll{args.lamlen}_b{args.b_perc}_fpfn{args.fp_fn}_skew{args.skew}_dens{args.synth_density}_s{args.seed}.pkl', 'wb') as f:
+            with open(f'results/net_results/{args.run_type}_{args.cms}_edge_counts_all_pnQ{args.p}_{args.n}_{args.Q}_{args.llo}_{args.lhi}_ll{args.lamlen}_b{args.b_perc}_fpfn{args.fp_fn}_skew{args.skew}_dens{args.synth_density}_s{args.seed}.pkl', 'wb') as f:
                 pickle.dump(combined_edge_counts, f)
 
 
             # Transfer results to $HOME
-            os.system("cp -r net_results/ $HOME/MONIKA/data/")
+            os.system("cp -r results/net_results/ $HOME/MONIKA/results/")
 
     else:
         # If no SLURM environment, run for entire lambda range
@@ -520,7 +533,7 @@ if __name__ == "__main__":
                                                   machine='local')
 
         # Save results to a pickle file
-        with open(f'net_results/local_{args.run_type}_{args.cms}_edge_counts_all_pnQ{p}_{args.n}_{args.Q}_{args.llo}_{args.lhi}_ll{args.lamlen}_b{args.b_perc}_fpfn{args.fp_fn}_dens{args.synth_density}_s{args.seed}.pkl', 'wb') as f:
+        with open(f'results/net_results/{args.run_type}_{args.cms}_edge_counts_all_pnQ{p}_{args.n}_{args.Q}_{args.llo}_{args.lhi}_ll{args.lamlen}_b{args.b_perc}_fpfn{args.fp_fn}_dens{args.synth_density}_s{args.seed}.pkl', 'wb') as f:
             pickle.dump(edge_counts, f)
 
 

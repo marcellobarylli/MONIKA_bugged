@@ -68,7 +68,6 @@ parser.add_argument('--pathway', type=bool, default=False, help='Boolean for Pat
 parser.add_argument('--path_size_range', type=str, default='5,26', help='Range of reduction factors to investigate for permutation')
 parser.add_argument('--permu_runs', type=int, default=None, help='Number of runs for permutation random pathway knockout')
 parser.add_argument('--visualize', type=bool, default=False, help='Boolean for visualizing the network')
-parser.add_argument('--enrich_file', type=str, default='/home/mbarylli/thesis_code/Diffusion/data_for_diffusion/Pathway_Enrichment_Info_LinkedOmics.csv', help='Path to pathway enrichment file')
 parser.add_argument('--symmetric', type=bool, default=True, help='Boolean for symmetric knockdown')
 parser.add_argument('--net_dens', type=str, default='low_dens', help='Network density')
 
@@ -103,12 +102,8 @@ def weighted_multi_omics_graph(cms, verbose=False):
     cms = cms
     man = False
 
-    if "SLURM_JOB_ID" in os.environ:
-        adj_matrix_proteomics = pd.read_csv(f'/home/mbarylli/thesis_code/Diffusion/data_for_diffusion/inferred_adjacencies/proteomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
-        adj_matrix_transcriptomics = pd.read_csv(f'/home/mbarylli/thesis_code/Diffusion/data_for_diffusion/inferred_adjacencies/transcriptomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
-    else: 
-        adj_matrix_proteomics = pd.read_csv(f'/home/celeroid/Documents/CLS_MSc/Thesis/EcoCancer/MONIKA/Networks/net_results/inferred_adjacencies/proteomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
-        adj_matrix_transcriptomics = pd.read_csv(f'/home/celeroid/Documents/CLS_MSc/Thesis/EcoCancer/MONIKA/Networks/net_results/inferred_adjacencies/transcriptomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
+    adj_matrix_proteomics = pd.read_csv(f'results/net_results/inferred_adjacencies/proteomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
+    adj_matrix_transcriptomics = pd.read_csv(f'results/net_results/inferred_adjacencies/transcriptomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
 
 
     # Create separate graphs for each adjacency matrix
@@ -425,102 +420,6 @@ def knockdown_node_single_layer(G, node_to_isolate_base, layer_suffix, reduced_w
     return modified_graph, new_laplacian
 
 
-def knockdown_pathway_nodes(G, pathway_description, reduced_weight=0.3):
-    """
-    Reduces the weights of all edges connected to the nodes in a pathway in both layers of the graph.
-    params:
-        G: NetworkX graph
-        pathway_description: Description of the pathway whose nodes will be reduced in both layers
-        reduced_weight: Factor to reduce edge weights by, defaults to 0.3
-    returns:
-        Tuple containing the modified graph and its weighted Laplacian matrix
-        num_disconnected_components: Number of disconnected components in the subgraph
-        connected_components_lengths: Lengths of connected components in the subgraph
-        len(pathway_nodes_with_suffixes): Number of nodes in the pathway
-    """
-
-    # Find rows where 'Pathway' column contains the given string
-    rows = pathway_df[pathway_df['Pathway'] == pathway_description]
-    
-    # Initialize a list to store the base node names
-    base_node_names = []
-
-    # Iterate over the found rows
-    for _, row in rows.iterrows():
-        # Split the 'genes' column into individual genes and add them to the list
-        base_node_names.extend(row['genes'].split('|'))
-
-    modified_graph = G.copy()
-    
-    # Iterate over the base node names
-    for node_to_isolate_base in base_node_names:
-        # Add layer suffixes to the base node name
-        node_to_isolate_proteomics = f"{node_to_isolate_base}.p"
-        node_to_isolate_transcriptomics = f"{node_to_isolate_base}.t"
-        
-        # Reduce the weight of all edges to and from this node in both layers
-        for node_to_isolate in [node_to_isolate_proteomics, node_to_isolate_transcriptomics]:
-            if node_to_isolate in G:
-                for neighbor in G[node_to_isolate]:
-                    modified_graph[node_to_isolate][neighbor]['weight'] = reduced_weight
-                    modified_graph[neighbor][node_to_isolate]['weight'] = reduced_weight
-    
-    # Compute the weighted Laplacian matrix for the modified graph
-    new_laplacian = weighted_laplacian_matrix(modified_graph)
-
-    ### COMNNECTED COMPONENTS
-    pathway_nodes_with_suffixes = [f"{node}.p" for node in base_node_names] + [f"{node}.t" for node in base_node_names]
-    subgraph = modified_graph.subgraph(pathway_nodes_with_suffixes)
-    connected_components = list(nx.connected_components(subgraph))
-    # get lengths of connected components
-    connected_components_lengths = [len(i) for i in connected_components]
-    num_disconnected_components = len(connected_components)
-    ###
-
-
-    return modified_graph, new_laplacian, num_disconnected_components, connected_components_lengths, len(pathway_nodes_with_suffixes)
-
-
-def knockdown_random_nodes(G, node_list, reduced_weight=0.05):
-    """
-    Reduces the weights of all edges connected to the nodes in a pathway or a list of nodes in both layers of the graph.
-    params:
-        G: NetworkX graph
-        num_nodes: Number of nodes to randomly select for knockdown
-        reduced_weight: Factor to reduce edge weights by, defaults to 0.3
-    returns:
-        Tuple containing the modified graph and its weighted Laplacian matrix
-        num_disconnected_components: Number of disconnected components in the subgraph
-        connected_components_lengths: Lengths of connected components in the subgraph
-        len(pathway_nodes_with_suffixes): Number of nodes in the pathway
-    """
-
-
-    modified_graph = G.copy()
-    
-    # Reduce the weight of all edges to and from the random nodes in both layers
-    for node in node_list:
-        if node in G:  # Check if the node is present in the graph
-            for neighbor in G[node]:  # Iterate through its neighbors
-                # Reducing the weights
-                modified_graph[node][neighbor]['weight'] = reduced_weight
-                modified_graph[neighbor][node]['weight'] = reduced_weight
-        else:
-            print(f"Node {node} not found in graph!!!!!!!!!!!")
-
-    # Form the subgraph for the randomly selected nodes
-    subgraph = modified_graph.subgraph(node_list)
-    # Find the connected components in the subgraph
-    connected_components = list(nx.connected_components(subgraph))
-    connected_components_lengths = [len(i) for i in connected_components]
-
-    # Calculate the number of disconnected components (which is the length of connected components list)
-    num_disconnected_components = len(connected_components)
-    # Compute the weighted Laplacian matrix for the modified graph
-    new_laplacian = nx.laplacian_matrix(modified_graph)
-
-    # Return the modified graph, new laplacian, and number of disconnected components
-    return modified_graph, new_laplacian, num_disconnected_components, connected_components_lengths, len(node_list)
 
 # %% #################### MPI PARALLELIZATION & RUN FUNCTION DEFINITIONS ####################
 
@@ -549,28 +448,6 @@ def distribute_nodes(nodes, rank, size):
     return nodes[start_index:end_index]
 
 
-def distribute_pathways(pathways, rank, size):
-    """
-    Distributes pathways across ranks.
-    params:
-        pathways: List of pathways
-        rank: Rank of the current process
-        size: Total number of processes
-    returns:
-        List of pathways assigned to the current rank
-    """
-    num_pathways = len(pathways)
-    pathways_per_proc = num_pathways // size
-    remainder = num_pathways % size
-
-    if rank < remainder:
-        start_index = rank * (pathways_per_proc + 1)
-        end_index = start_index + pathways_per_proc + 1
-    else:
-        start_index = remainder * (pathways_per_proc + 1) + (rank - remainder) * pathways_per_proc
-        end_index = start_index + pathways_per_proc
-
-    return pathways[start_index:end_index]
 
 def distribute_runs(total_runs, rank, size):
     """
@@ -580,35 +457,6 @@ def distribute_runs(total_runs, rank, size):
     start_run = rank * runs_per_rank
     end_run = start_run + runs_per_rank if rank != size - 1 else total_runs  # Ensure the last rank takes any remaining runs
     return range(start_run, end_run)
-
-
-def generate_node_combinations(G, num_nodes, total_combinations=10000):
-    """
-    Generates unique combinations of nodes for knockout analysis. For generating random null distribution of knockouts.
-    params:
-        G: NetworkX graph
-        num_nodes: Number of nodes to select
-        total_combinations: Total number of combinations to generate
-    returns:
-        List of unique combinations of nodes
-    """
-    local_random = random.Random(42)  # using a local instance of Random
-
-    # Separate nodes by layer
-    proteomics_nodes = [node for node in G.nodes() if node.endswith('.p')]
-
-    unique_combinations = set()
-    while len(unique_combinations) < total_combinations:
-        # generate a new combination
-        # Randomly select half of the nodes from each layer
-        random_proteomics_nodes = local_random.sample(proteomics_nodes, num_nodes)
-        random_transcriptomics_nodes = [node.replace('.p', '.t') for node in random_proteomics_nodes]  # Get corresponding nodes in the other layer
-        
-        # Combine both sets of nodes and convert them to a tuple (immutable)
-        random_nodes_tuple = tuple(random_proteomics_nodes + random_transcriptomics_nodes)
-        unique_combinations.add(random_nodes_tuple)
-
-    return list(unique_combinations)
 
 
 def run_knockout_analysis(G_aggro, 
@@ -641,116 +489,57 @@ def run_knockout_analysis(G_aggro,
     results = {}
 
     # knocking out specific nodes and pathways
-    if knockout_type == 'runtype_node' or knockout_type == 'runtype_pathway':
+    results[knockout_target] = {}
+    for reduction in red_range:
+        # print(f"Processing {knockout_target} Knockdown with reduction factor: {reduction}")
+        # Perform the knockout
+        if args.symmetric:
+            # Symmetric knockdown means that cms123 and cmsALL are knocked down equally
+            knockdown_func = knockdown_node_both_layers if knockout_type == 'runtype_node' else knockdown_pathway_nodes
 
-        if knockout_type == 'runtype_pathway':
-            target_list = pathway_df[pathway_df['Pathway'] == knockout_target]['genes'].str.split('|').explode().tolist()
-            num_genes = len(target_list)  # Number of genes in the pathway
-            print(f"Gene count in {knockout_target}: {num_genes}\n")
+            # Get the knocked down (knockout) network and Laplacian for both cmsALL (aggressive) and cms123 (stable)
+            knockdown_graph_aggro, knockdown_laplacian_aggro, _, _, _ = knockdown_func(G_aggro, knockout_target, reduced_weight=reduction)
+            knockdown_graph_stable, knockdown_laplacian_stable, _, _, _ = knockdown_func(G_stable, knockout_target, reduced_weight=reduction)
 
+            # Calculate diffusion kernels and GDD
+            knock_aggro_eigs = laplacian_eigendecomp(knockdown_laplacian_aggro)
+            knock_stable_eigs = laplacian_eigendecomp(knockdown_laplacian_stable)
+            diff_kernel_knock_aggro = [knock_aggro_eigs[1] @ np.diag(np.exp(-t * knock_aggro_eigs[0])) @ knock_aggro_eigs[1].T for t in t_values]
+            diff_kernel_knock_stable = [knock_stable_eigs[1] @ np.diag(np.exp(-t * knock_stable_eigs[0])) @ knock_stable_eigs[1].T for t in t_values]
 
-        results[knockout_target] = {}
-        for reduction in red_range:
-            # print(f"Processing {knockout_target} Knockdown with reduction factor: {reduction}")
-            # Perform the knockout
-            if args.symmetric:
-                # Symmetric knockdown means that cms123 and cmsALL are knocked down equally
-                knockdown_func = knockdown_node_both_layers if knockout_type == 'runtype_node' else knockdown_pathway_nodes
+            # Get GDD values
+            gdd_values_trans = np.linalg.norm(np.array(diff_kernel_knock_stable) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
+            gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
+            gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
+        else:
+            # Asymmetric knockdown, only cmsALL (aggressive) is knocked down
+            knockdown_func = knockdown_node_both_layers if knockout_type == 'runtype_node' else knockdown_pathway_nodes
 
-                # Get the knocked down (knockout) network and Laplacian for both cmsALL (aggressive) and cms123 (stable)
-                knockdown_graph_aggro, knockdown_laplacian_aggro, _, _, _ = knockdown_func(G_aggro, knockout_target, reduced_weight=reduction)
-                knockdown_graph_stable, knockdown_laplacian_stable, _, _, _ = knockdown_func(G_stable, knockout_target, reduced_weight=reduction)
+            knockdown_graph_aggro, knockdown_laplacian_aggro, _, _, _ = knockdown_func(G_aggro, knockout_target, reduced_weight=reduction)
 
-                # Calculate diffusion kernels and GDD
-                knock_aggro_eigs = laplacian_eigendecomp(knockdown_laplacian_aggro)
-                knock_stable_eigs = laplacian_eigendecomp(knockdown_laplacian_stable)
-                diff_kernel_knock_aggro = [knock_aggro_eigs[1] @ np.diag(np.exp(-t * knock_aggro_eigs[0])) @ knock_aggro_eigs[1].T for t in t_values]
-                diff_kernel_knock_stable = [knock_stable_eigs[1] @ np.diag(np.exp(-t * knock_stable_eigs[0])) @ knock_stable_eigs[1].T for t in t_values]
+            # Calculate diffusion kernels and GDD
+            diff_kernel_knock_aggro = [laplacian_exponential_kernel_eigendecomp(knockdown_laplacian_aggro, t) for t in t_values]
 
-                # Get GDD values
-                gdd_values_trans = np.linalg.norm(np.array(diff_kernel_knock_stable) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
-            else:
-                # Asymmetric knockdown, only cmsALL (aggressive) is knocked down
-                knockdown_func = knockdown_node_both_layers if knockout_type == 'runtype_node' else knockdown_pathway_nodes
-
-                knockdown_graph_aggro, knockdown_laplacian_aggro, _, _, _ = knockdown_func(G_aggro, knockout_target, reduced_weight=reduction)
-
-                # Calculate diffusion kernels and GDD
-                diff_kernel_knock_aggro = [laplacian_exponential_kernel_eigendecomp(knockdown_laplacian_aggro, t) for t in t_values]
-
-                # Get GDD values
-                gdd_values_trans = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
+            # Get GDD values
+            gdd_values_trans = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
+            gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
+            gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
 
 
-            results[knockout_target][reduction] = {
-                'gdd_values_trans': gdd_values_trans,
-                'gdd_values_disruptA': gdd_values_disruptA,
-                'gdd_values_disruptS': gdd_values_disruptS,
-                'max_gdd_trans': np.max(np.sqrt(gdd_values_trans)), # # get peak eta for symmetric, which corresponds to GDD
-                'max_gdd_disruptS': np.max(np.sqrt(gdd_values_disruptA)), # get peak eta for stable disruption, which corresponds to GDD
-                'max_gdd_disruptA': np.max(np.sqrt(gdd_values_disruptS)) # get peak eta for aggressive disruption, which corresponds to GDD
-            }
+        results[knockout_target][reduction] = {
+            'gdd_values_trans': gdd_values_trans,
+            'gdd_values_disruptA': gdd_values_disruptA,
+            'gdd_values_disruptS': gdd_values_disruptS,
+            'max_gdd_trans': np.max(np.sqrt(gdd_values_trans)), # # get peak eta for symmetric, which corresponds to GDD
+            'max_gdd_disruptS': np.max(np.sqrt(gdd_values_disruptA)), # get peak eta for stable disruption, which corresponds to GDD
+            'max_gdd_disruptA': np.max(np.sqrt(gdd_values_disruptS)) # get peak eta for aggressive disruption, which corresponds to GDD
+        }
 
-            if args and args.visualize:
-                results[knockout_target][reduction]['vis_kernels'] = [
-                    diff_kernel_knock_aggro[i] for i in range(len(t_values)) 
-                    if i == 0 or (i + 1) % 50 == 0
-                ]
-
-    # knocking out random nodes (ie random pathways)
-    elif knockout_type == 'runtype_random':
-
-        num_rand_nodes = knockout_target  # Number of genes in the pathway
-
-        unique_node_combinations = generate_node_combinations(G_aggro, num_rand_nodes, total_combinations=args.permu_runs)
-
-        for run_index in run_idx:
-
-            node_list = unique_node_combinations[run_index]
-            results[f'random_{num_rand_nodes}_run_{run_index}'] = {}
-
-            for reduction in red_range:
-                if args.symmetric: 
-                    # Perform the knockout
-                    knockdown_graph_aggro, knockdown_laplacian_aggro,_,_,_ = knockdown_random_nodes(G_aggro, node_list, reduced_weight=reduction)
-                    knockdown_graph_stable, knockdown_laplacian_stable,_,_,_ = knockdown_random_nodes(G_stable, node_list, reduced_weight=reduction)
-
-                    # Calculate diffusion kernels and GDD
-                    knock_aggro_eigs = laplacian_eigendecomp(knockdown_laplacian_aggro)
-                    knock_stable_eigs = laplacian_eigendecomp(knockdown_laplacian_stable)
-                    diff_kernel_knock_aggro = [knock_aggro_eigs[1] @ np.diag(np.exp(-t * knock_aggro_eigs[0])) @ knock_aggro_eigs[1].T for t in t_values]
-                    diff_kernel_knock_stable = [knock_stable_eigs[1] @ np.diag(np.exp(-t * knock_stable_eigs[0])) @ knock_stable_eigs[1].T for t in t_values]
-
-                    gdd_values_trans = np.linalg.norm(np.array(diff_kernel_knock_stable) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                    gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                    gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
-                else:
-                    # Perform the knockout
-                    knockdown_graph_aggro, knockdown_laplacian_aggro,_,_,_ = knockdown_random_nodes(G_aggro, node_list, reduced_weight=reduction)
-
-                    # Calculate diffusion kernels and GDD
-                    diff_kernel_knock_aggro = [laplacian_exponential_kernel_eigendecomp(knockdown_laplacian_aggro, t) for t in t_values]
-
-                    gdd_values_trans = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                    gdd_values_disruptA = np.linalg.norm(np.array(orig_aggro_kernel) - np.array(diff_kernel_knock_aggro), axis=(1, 2), ord='fro')**2
-                    gdd_values_disruptS = np.linalg.norm(np.array(orig_nonmes_kernel) - np.array(diff_kernel_knock_stable), axis=(1, 2), ord='fro')**2
-
-                try:
-                    results[f'random_{num_rand_nodes}_run_{run_index}'][reduction] = {
-                        'max_gdd_trans': np.max(np.sqrt(gdd_values_trans)),
-                        'max_gdd_disruptA': np.max(np.sqrt(gdd_values_disruptA)),
-                        'max_gdd_disruptS': np.max(np.sqrt(gdd_values_disruptS))
-                    }
-                except KeyError as e:
-                    print(f"KeyError encountered! Attempted to access results[{f'random_{num_rand_nodes}_run_{run_index}'}][{reduction}]")
-                    print(f"The current keys in results are: {list(results.keys())}")
-                    print(f"Contents of the problematic key if it exists: {results.get(f'random_{num_rand_nodes}_run_{run_index}', 'Key does not exist!')}")
-                    print(f"Value of num_rand_nodes: {num_rand_nodes}, Value of _: {run_index}, Value of reduction: {reduction}")
-                    raise e  # Re-raise the exception to halt the script and indicate error
+        if args and args.visualize:
+            results[knockout_target][reduction]['vis_kernels'] = [
+                diff_kernel_knock_aggro[i] for i in range(len(t_values)) 
+                if i == 0 or (i + 1) % 50 == 0
+            ]
 
 
     return results
@@ -834,68 +623,23 @@ local_target_results = {}
 #     args.pathway = False
 #     args.koh = 0
 
-if args.pathway == True:
-    # PATHWAY KNOCKOUTS
-    for pathway in pathways_subset:
-        pathway_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_pathway', pathway, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values, pathway_df)
-        local_target_results.update(pathway_results)
 
-    if args.permu_runs:
-        # RANDOM PATHWAY KNOCKOUTS (for permutation analysis)
-        local_rand_results = {}
-        
-        # Determine the subset of run indices for each rank
-        run_indices = distribute_runs(args.permu_runs, rank, size)
-
-        pathway_sizes = args.path_size_range.split(',')
-        pathway_sizes = range(int(pathway_sizes[0]), int(pathway_sizes[1]) + 1)
-        
-        # print(f'pathway sizes for rank {rank}: {pathway_sizes}')
-        print(f'run indices for rank {rank}: {run_indices}')
-
-        # Create a boolean series where each element is True if the 'Pathway' column contains any of the pathway descriptions
-        for random_pathway_size in pathway_sizes:
-            rand_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_random', random_pathway_size, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values, pathway_df, run_idx=run_indices)
-            
-            local_rand_results.update(rand_results)
-            
-        print(f'Rank {rank} has finished the target and random pathway runs.')
-
-
-else:
-    # NODE knockouts
-    with tqdm(total=len(nodes_subset), desc=f"Calculating {len(nodes_subset)} gene knockouts, progress") as pbar:
-        for node in nodes_subset:
-            # RUN the knockout analysis function
-            node_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_node', node, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values)
-            local_target_results.update(node_results)
-            pbar.update(1)
+# NODE knockouts
+with tqdm(total=len(nodes_subset), desc=f"Calculating {len(nodes_subset)} gene knockouts, progress") as pbar:
+    for node in nodes_subset:
+        # RUN the knockout analysis function
+        node_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_node', node, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values)
+        local_target_results.update(node_results)
+        pbar.update(1)
 
 
 # GATHERING RESULTS
-all_target_results = comm.gather(local_target_results, root=0)
+all_results_list = [local_target_results]
 
-# FOR PATHWAY KNOCKOUTS
-if args.pathway:
-    if args.permu_runs:
-        all_rand_results = comm.gather(local_rand_results, root=0)
-        all_results_list = [all_target_results, all_rand_results]
-        filename_identifiers = ['target', 'random']
-    else:
-        all_results_list = [all_target_results]
-        filename_identifiers = ['target']
-    
-    # Assuming 'pathways' is a list of strings
-    unique_identifier = ''.join([pathway[0] for pathway in pathways])
-    unique_identifier = unique_identifier[:20]
+filename_identifiers = ['target']
 
-# FOR NODE KNOCKOUTS
-else:
-    all_results_list = [all_target_results]
-    filename_identifiers = ['target']
-
-    unique_identifier = ''.join([node[0] for node in nodes_to_investigate_bases])
-    unique_identifier = unique_identifier[:5]
+unique_identifier = ''.join([node[0] for node in nodes_to_investigate_bases])
+unique_identifier = unique_identifier[:5]
 
 for i, all_results in enumerate(all_results_list):
     # Post-processing on the root processor
@@ -908,18 +652,18 @@ for i, all_results in enumerate(all_results_list):
             for key, value in process_results.items():
                 combined_results[key] = value
 
-        with open(f'diff_results/Pathway_{args.pathway}_{filename_identifiers[i]}_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}_permu{args.permu_runs}_symmetric{args.symmetric}_{args.net_dens}_{args.path_size_range}.pkl', 'wb') as f:
+        with open(f'results/diff_results/Pathway_{args.pathway}_{filename_identifiers[i]}_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}_permu{args.permu_runs}_symmetric{args.symmetric}_{args.net_dens}_{args.path_size_range}.pkl', 'wb') as f:
             pkl.dump(combined_results, f)
         
-        os.system("cp -r diff_results/ $HOME/thesis_code/Diffusion/")
+        os.system("cp -r diff_results/ $HOME/MONIKA/results/")
         print('Saving has finished.')
 
 
     elif rank == 0 and "SLURM_JOB_ID" not in os.environ:
-        with open(f'diff_results/LOCAL_Pathway_{args.pathway}_{filename_identifiers[i]}_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}_permu{args.permu_runs}_symmetric{args.symmetric}_{args.net_dens}_{args.path_size_range}.pkl', 'wb') as f:
+        with open(f'results/diff_results/LOCAL_Pathway_{args.pathway}_{filename_identifiers[i]}_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}_permu{args.permu_runs}_symmetric{args.symmetric}_{args.net_dens}_{args.path_size_range}.pkl', 'wb') as f:
             pkl.dump(local_target_results, f)
 
-        # with open(f'diff_results/Pathway_{args.pathway}_random_node_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}.pkl', 'wb') as f:
+        # with open(f'results/diff_results/Pathway_{args.pathway}_random_node_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}.pkl', 'wb') as f:
         #     pkl.dump(local_rand_results, f)
 
 
@@ -944,7 +688,7 @@ if "SLURM_JOB_ID" not in os.environ:
     #  NODE KNOCKOUT ANALYSIS
     t_values = np.linspace(0.01, 10, 250)
     if args.pathway == False:
-        with open(f'diff_results/LOCAL_Pathway_False_target_XPSPY_GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
+        with open(f'results/diff_results/LOCAL_Pathway_False_target_XPSPY_GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
             node_knockouts = pkl.load(f)
 
         print(f'node_knockouts: {node_knockouts.keys()}')
@@ -1107,7 +851,7 @@ if "SLURM_JOB_ID" not in os.environ:
 
 
         # write to file
-        df.to_csv(f'diff_results/NODE_KNOCKOUTS_RESULTS_symmetric{args.symmetric}_{args.net_dens}.csv', index=True)
+        df.to_csv(f'results/diff_results/NODE_KNOCKOUTS_RESULTS_symmetric{args.symmetric}_{args.net_dens}.csv', index=True)
 
         # %% SAVE FOR LATER
         # PLOT 2 (WEAKER KNOCKDOWN)
@@ -1234,7 +978,7 @@ if "SLURM_JOB_ID" not in os.environ:
 
         def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
             # Load the pickle file
-            with open('diff_results/Pathway_False_target_X_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
+            with open('results/diff_results/Pathway_False_target_X_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
                 results = pkl.load(f)
             
             time_resolved_kernels = results['XRCC1'][0.05]['vis_kernels'] #  visualisation_kernel[:7] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
@@ -1363,7 +1107,7 @@ if "SLURM_JOB_ID" not in os.environ:
             # cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
             # plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
             # savethefigure
-            plt.savefig('diffusion_figure.svg') # make rc.param no font export
+            plt.savefig('results/diff_results/diffusion_figure.svg') # make rc.param no font export
 
             # Display the figure
             plt.tight_layout()
@@ -1382,10 +1126,10 @@ if "SLURM_JOB_ID" not in os.environ:
 
     def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
         # Load the pickle file
-        with open('diff_results/Pathway_False_target_XAMNC_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
+        with open('results/diff_results/Pathway_False_target_XAMNC_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
             results = pkl.load(f)
         
-        # with open('diff_results/Pathway_False_target_BCGGS_GDDs_ks308_permuNone.pkl', 'rb') as f:
+        # with open('results/diff_results/Pathway_False_target_BCGGS_GDDs_ks308_permuNone.pkl', 'rb') as f:
         #     results = pkl.load(f)
         
         time_resolved_kernels =  visualisation_kernel[:5] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
@@ -1500,7 +1244,7 @@ if "SLURM_JOB_ID" not in os.environ:
         # Display the figure
         plt.tight_layout()
         # save as svg
-        plt.savefig('diffusion_figure2.svg') # make rc.param no font export
+        plt.savefig('results/diff_results/diffusion_figure2.svg') # make rc.param no font export
         plt.show()
 
     args.visualize = True
