@@ -1,4 +1,16 @@
 # %%
+import os
+import sys
+
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory (MONIKA)
+project_dir = os.path.dirname(script_dir)
+# Add the project directory to the Python path
+sys.path.append(project_dir)
+# Change the working directory to the project directory
+os.chdir(project_dir)
+
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -67,7 +79,7 @@ parser.add_argument('--test_net', type=bool, default=False, help='Boolean for us
 parser.add_argument('--pathway', type=bool, default=False, help='Boolean for Pathway Knockout')
 parser.add_argument('--path_size_range', type=str, default='5,26', help='Range of reduction factors to investigate for permutation')
 parser.add_argument('--permu_runs', type=int, default=None, help='Number of runs for permutation random pathway knockout')
-parser.add_argument('--visualize', type=bool, default=False, help='Boolean for visualizing the network')
+parser.add_argument('--visualize', type=bool, default=True, help='Boolean for visualizing the network')
 parser.add_argument('--symmetric', type=bool, default=True, help='Boolean for symmetric knockdown')
 parser.add_argument('--net_dens', type=str, default='low_dens', help='Network density')
 
@@ -104,7 +116,6 @@ def weighted_multi_omics_graph(cms, verbose=False):
 
     adj_matrix_proteomics = pd.read_csv(f'results/net_results/inferred_adjacencies/proteomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
     adj_matrix_transcriptomics = pd.read_csv(f'results/net_results/inferred_adjacencies/transcriptomics_{cms}_adj_matrix_p{p}_Lambda_np{not man}_{args.net_dens}.csv', index_col=0)
-
 
     # Create separate graphs for each adjacency matrix
     G_proteomics_layer = nx.from_pandas_adjacency(adj_matrix_proteomics)
@@ -197,9 +208,9 @@ def weighted_multi_omics_graph(cms, verbose=False):
             processed_v = preprocess_node_name(v)
             M[processed_u, processed_v, 'RNA', 'RNA'] = 1
 
-        return weighted_G_multiplex, M  #, rna_node_positions
+        return weighted_G_multiplex, M, orphans_proteomics  #, rna_node_positions
     else:
-        return weighted_G_multiplex, None       
+        return weighted_G_multiplex, None, orphans_proteomics 
 
 # get number of orphans
 def get_orphans(G):
@@ -210,8 +221,8 @@ def get_orphans(G):
     return orphans
 
 
-weighted_G_cms_123, pymnet_123 = weighted_multi_omics_graph('cms123')
-weighted_G_cms_ALL, pymnet_ALL = weighted_multi_omics_graph('cmsALL')
+weighted_G_cms_123, pymnet_123, orphan_prots_123 = weighted_multi_omics_graph('cms123')
+weighted_G_cms_ALL, pymnet_ALL, orphan_prots_ALL = weighted_multi_omics_graph('cmsALL')
 
 
 orphans_123 = get_orphans(weighted_G_cms_123)
@@ -469,7 +480,8 @@ def run_knockout_analysis(G_aggro,
                           orig_nonmes_kernel, 
                           orig_gdd_values,  
                           pathway_df=None,
-                          run_idx=None):
+                          run_idx=None,
+                          viz_bool=False):
     """
     Performs knockouts on graphs, calculates diffusion distance and returns metrics.
     params:
@@ -535,10 +547,14 @@ def run_knockout_analysis(G_aggro,
             'max_gdd_disruptA': np.max(np.sqrt(gdd_values_disruptS)) # get peak eta for aggressive disruption, which corresponds to GDD
         }
 
-        if args and args.visualize:
+        if viz_bool == True:
+            if 'SLURM_JOB_ID' in os.environ:
+                diff_window = 10
+            else:
+                diff_window = 1
             results[knockout_target][reduction]['vis_kernels'] = [
                 diff_kernel_knock_aggro[i] for i in range(len(t_values)) 
-                if i == 0 or (i + 1) % 50 == 0
+                if i == 0 or (i + 1) % diff_window == 0
             ]
 
 
@@ -553,10 +569,7 @@ degree_dict = dict(weighted_G_cms_ALL.degree(weighted_G_cms_ALL.nodes()))
 hub_nodes = sorted(degree_dict, key=lambda x: degree_dict[x], reverse=True)[:args.koh]
 low_nodes = sorted(degree_dict, key=lambda x: degree_dict[x])[:args.kob]
 
-if args.visualize:
-    t_values = np.linspace(0.00, 10, 500)
-else:
-    t_values = np.linspace(0.01, 10, 250)
+t_values = np.linspace(0.01, 10, 250)
 
 if args.koh == 0:
     nodes_to_investigate_bases = list(set([node.split('.')[0] for node in weighted_G_cms_ALL.nodes()])) # KNOCK OUT ALL NODES FOR FIXED REDUCTION, NODE COMPARISON
@@ -571,12 +584,8 @@ if "SLURM_JOB_ID" in os.environ:
     print(f'nodes for rank {rank}: {nodes_subset}')
 else:
     nodes_subset = nodes_to_investigate_bases
-    print(f'nodes for rank {rank}: {nodes_subset}')
     rank = 0
     size = 1
-
-# if "SLURM_JOB_ID" not in os.environ:
-    # args.test_net = True
 
 # TEST NET
 if args.test_net:
@@ -625,10 +634,16 @@ local_target_results = {}
 
 
 # NODE knockouts
+# choose random node from the subset
+node_for_viz = np.random.choice(nodes_subset)
 with tqdm(total=len(nodes_subset), desc=f"Calculating {len(nodes_subset)} gene knockouts, progress") as pbar:
     for node in nodes_subset:
+        if node == node_for_viz:
+            viz_bool = True
+        else:
+            viz_bool = False
         # RUN the knockout analysis function
-        node_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_node', node, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values)
+        node_results = run_knockout_analysis(weighted_G_cms_ALL, weighted_G_cms_123, 'runtype_node', node, red_range, t_values, orig_aggro_kernel, orig_non_mesench_kernel, orig_gdd_values, viz_bool=viz_bool)
         local_target_results.update(node_results)
         pbar.update(1)
 
@@ -638,8 +653,11 @@ all_results_list = [local_target_results]
 
 filename_identifiers = ['target']
 
-unique_identifier = ''.join([node[0] for node in nodes_to_investigate_bases])
-unique_identifier = unique_identifier[:5]
+if args.pathway:
+    unique_identifier = ''.join([node[0] for node in nodes_to_investigate_bases])
+    unique_identifier = unique_identifier[:5]
+else:
+    unique_identifier = ''
 
 for i, all_results in enumerate(all_results_list):
     # Post-processing on the root processor
@@ -663,9 +681,6 @@ for i, all_results in enumerate(all_results_list):
         with open(f'results/diff_results/LOCAL_Pathway_{args.pathway}_{filename_identifiers[i]}_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}_permu{args.permu_runs}_symmetric{args.symmetric}_{args.net_dens}_{args.path_size_range}.pkl', 'wb') as f:
             pkl.dump(local_target_results, f)
 
-        # with open(f'results/diff_results/Pathway_{args.pathway}_random_node_{unique_identifier}_GDDs_ks{str(orig_aggro_kernel[0].shape[0])}.pkl', 'wb') as f:
-        #     pkl.dump(local_rand_results, f)
-
 
 # get the end time
 end_time = time.time()
@@ -686,484 +701,290 @@ MPI.Finalize()
 if "SLURM_JOB_ID" not in os.environ:
 
     #  NODE KNOCKOUT ANALYSIS
-    t_values = np.linspace(0.01, 10, 250)
-    if args.pathway == False:
-        with open(f'results/diff_results/LOCAL_Pathway_False_target_XPSPY_GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
-            node_knockouts = pkl.load(f)
+    with open(f'results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
+        node_knockouts = pkl.load(f)
 
-        print(f'node_knockouts: {node_knockouts.keys()}')
-        print(f'Reduction factors: {node_knockouts[list(node_knockouts.keys())[0]].keys()}')
-        # print(f'GDD values: {node_knockouts[list(node_knockouts.keys())[0]][0.05]}')
+    print(f'node_knockouts: {node_knockouts.keys()}')
+    print(f'Reduction factors: {node_knockouts[list(node_knockouts.keys())[0]].keys()}')
+    # print(f'GDD values: {node_knockouts[list(node_knockouts.keys())[0]][0.05]}')
 
 
-        # for key in node_knockouts.keys():
-        #     print(f'node {key}: {node_knockouts[key].keys()}')
-        # Choose the node and t_values for plotting
-        selected_node = np.random.choice(list(node_knockouts.keys()))
+    # for key in node_knockouts.keys():
+    #     print(f'node {key}: {node_knockouts[key].keys()}')
+    # Choose the node and t_values for plotting
+    selected_node = np.random.choice(list(node_knockouts.keys()))
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6), dpi=300)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6), dpi=300)
 
-        # Left plot: GDD values over time for various reductions (single node)
-        for reduction in node_knockouts[selected_node].keys():
-            gdd_values_trans = node_knockouts[selected_node][reduction]['gdd_values_trans']
-            gdd_values_disruptA = node_knockouts[selected_node][reduction]['gdd_values_disruptA']
-            gdd_values_disruptS = node_knockouts[selected_node][reduction]['gdd_values_disruptS']
-            ax1.plot(t_values, gdd_values_trans, label=f'Reduction {reduction}')
-            ax1.plot(t_values, gdd_values_disruptA, label=f'Reduction {reduction} (Disrupt)')
+    # Left plot: GDD values over time for various reductions (single node)
+    for reduction in node_knockouts[selected_node].keys():
+        gdd_values_trans = node_knockouts[selected_node][reduction]['gdd_values_trans']
+        gdd_values_disruptA = node_knockouts[selected_node][reduction]['gdd_values_disruptA']
+        gdd_values_disruptS = node_knockouts[selected_node][reduction]['gdd_values_disruptS']
+        ax1.plot(t_values, gdd_values_trans, label=f'Reduction {reduction}')
+        ax1.plot(t_values, gdd_values_disruptA, label=f'Reduction {reduction} (Disrupt)')
 
-        ax1.set_title(f'GDD Over Time for Various Reductions\nNode: {selected_node}')
-        ax1.set_xlabel('Time')
-        ax1.set_ylabel('GDD Value')
-        ax1.legend()
-        ax1.grid(True)
+    ax1.set_title(f'GDD Over Time for Various Reductions\nNode: {selected_node}')
+    ax1.set_xlabel('Time')
+    ax1.set_ylabel('GDD Value')
+    ax1.legend()
+    ax1.grid(True)
 
-        # Choose a reduction factor from the list of reductions
-        selected_reduction = red_range[0]
-        selected_reduction = 0.05
+    # Choose a reduction factor from the list of reductions
+    selected_reduction = red_range[0]
+    selected_reduction = 0.05
 
-        max_gdds_trans = {}
-        max_gdds_disruptA = {}
-        max_gdds_disruptS = {}
-        # Right plot: GDD values over time for a single reduction (all nodes)
-        for node_base in node_knockouts.keys():
-            gdd_values_trans = node_knockouts[node_base][selected_reduction]['gdd_values_trans']
-            gdd_values_disruptA = node_knockouts[node_base][selected_reduction]['gdd_values_disruptA']
-            gdd_values_disruptS = node_knockouts[node_base][selected_reduction]['gdd_values_disruptS']
-            ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base}', alpha=0.5)
-            # ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base} (Disrupt)', alpha=0.5)
-            max_gdds_trans[node_base] = np.max(gdd_values_trans)
-            max_gdds_disruptA[node_base] = np.max(gdd_values_disruptA)
-            max_gdds_disruptS[node_base] = np.max(gdd_values_disruptS)
+    max_gdds_trans = {}
+    max_gdds_disruptA = {}
+    max_gdds_disruptS = {}
+    # Right plot: GDD values over time for a single reduction (all nodes)
+    for node_base in node_knockouts.keys():
+        gdd_values_trans = node_knockouts[node_base][selected_reduction]['gdd_values_trans']
+        gdd_values_disruptA = node_knockouts[node_base][selected_reduction]['gdd_values_disruptA']
+        gdd_values_disruptS = node_knockouts[node_base][selected_reduction]['gdd_values_disruptS']
+        ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base}', alpha=0.5)
+        # ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base} (Disrupt)', alpha=0.5)
+        max_gdds_trans[node_base] = np.max(gdd_values_trans)
+        max_gdds_disruptA[node_base] = np.max(gdd_values_disruptA)
+        max_gdds_disruptS[node_base] = np.max(gdd_values_disruptS)
 
-        ax2.set_title(f'GDD Over Time for Single Reduction\nReduction: {selected_reduction}')
-        ax2.set_xlabel('Time')
-        # ax2.set_ylabel('GDD Value')  # Y-label is shared with the left plot
-        # ax2.legend()
-        ax2.set_xlim([0, 2])
-        ax2.grid(True)
+    ax2.set_title(f'GDD Over Time for Single Reduction\nReduction: {selected_reduction}')
+    ax2.set_xlabel('Time')
+    # ax2.set_ylabel('GDD Value')  # Y-label is shared with the left plot
+    # ax2.legend()
+    ax2.set_xlim([0, 2])
+    ax2.grid(True)
 
-        plt.show()
+    plt.show()
 
-        # %%
-        # print max_gdds in ascending order
-        sorted_max_gdds_trans = {k: v for k, v in sorted(max_gdds_trans.items(), key=lambda item: item[1])}
-        sorted_max_gdds_disruptA = {k: v for k, v in sorted(max_gdds_disruptA.items(), key=lambda item: item[1], reverse=True)}
-        sorted_max_gdds_disruptS = {k: v for k, v in sorted(max_gdds_disruptS.items(), key=lambda item: item[1], reverse=True)}
+    # %%
+    # print max_gdds in ascending order
+    sorted_max_gdds_trans = {k: v for k, v in sorted(max_gdds_trans.items(), key=lambda item: item[1])}
+    sorted_max_gdds_disruptA = {k: v for k, v in sorted(max_gdds_disruptA.items(), key=lambda item: item[1], reverse=True)}
+    sorted_max_gdds_disruptS = {k: v for k, v in sorted(max_gdds_disruptS.items(), key=lambda item: item[1], reverse=True)}
 
-        # add key for original max_gdd (Which is the original distance between the aggresive subtype and stable subtype)
-        sorted_max_gdds_disruptA['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
+    # add key for original max_gdd (Which is the original distance between the aggresive subtype and stable subtype)
+    sorted_max_gdds_disruptA['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
 
-        # print original max_gdd 
-        # print(f'Original GDD between aggressive and nonmesenchymal: {max_orig_gdd_values}')
-        # print(f'GDD values of top transition node knockouts (maximum distance decrease): {sorted_max_gdds_trans}')
+    # print original max_gdd 
+    # print(f'Original GDD between aggressive and nonmesenchymal: {max_orig_gdd_values}')
+    # print(f'GDD values of top transition node knockouts (maximum distance decrease): {sorted_max_gdds_trans}')
 
-        num_top_genes = 10
-        # # Print first N items of sorted_max_gdds_disruptA
-        print(f'GDD values of top disruptor node knockouts (maximum self-distance increase):')
-        for key, value in list(sorted_max_gdds_disruptA.items())[:num_top_genes]:
+    num_top_genes = 10
+    # # Print first N items of sorted_max_gdds_disruptA
+    print(f'GDD values of top disruptor node knockouts (maximum self-distance increase):')
+    for key, value in list(sorted_max_gdds_disruptA.items())[:num_top_genes]:
+        print(f'{key}: {value}')
+
+    print('-------------------')
+
+    # for key, value in list(sorted_max_gdds_disruptS.items())[:num_top_genes]:
+    #     print(f'{key}: {value}')
+
+    # print the length of the overlap of the top 10 nodes
+    overlap = set(list(sorted_max_gdds_disruptA.keys())[:num_top_genes]).intersection(set(list(sorted_max_gdds_disruptS.keys())[:num_top_genes]))
+
+    # print(f'overlap: {len(overlap)}')
+
+    # print the ones that are not in the overlap
+    print('The following knockouts significantly disrupt the aggressive subtype, but not the stable subtype: ')
+    for key, value in list(sorted_max_gdds_disruptA.items())[:num_top_genes]:
+        if key not in overlap:
             print(f'{key}: {value}')
 
-        print('-------------------')
-
-        # for key, value in list(sorted_max_gdds_disruptS.items())[:num_top_genes]:
-        #     print(f'{key}: {value}')
-
-        # print the length of the overlap of the top 10 nodes
-        overlap = set(list(sorted_max_gdds_disruptA.keys())[:num_top_genes]).intersection(set(list(sorted_max_gdds_disruptS.keys())[:num_top_genes]))
-
-        # print(f'overlap: {len(overlap)}')
-
-        # print the ones that are not in the overlap
-        print('The following knockouts significantly disrupt the aggressive subtype, but not the stable subtype: ')
-        for key, value in list(sorted_max_gdds_disruptA.items())[:num_top_genes]:
-            if key not in overlap:
-                print(f'{key}: {value}')
-
-
-
-        # %%
-        summed_degrees = {}
-        summed_degrees_aggro = {}
-        summed_betweenness = {}
-        summed_betweenness_aggro = {}
-        for node in sorted_max_gdds_trans.keys():
-            node_p = node + '.p'
-            node_t = node + '.t'
-            
-            # Accessing the degree for each node directly from the DegreeView
-            degree_p_aggro = weighted_G_cms_ALL.degree(node_p, weight='weight') if node_p in weighted_G_cms_ALL else 0
-            degree_t_aggro = weighted_G_cms_ALL.degree(node_t, weight='weight') if node_t in weighted_G_cms_ALL else 0
-            degree_p_stable = weighted_G_cms_123.degree(node_p, weight='weight') if node_p in weighted_G_cms_123 else 0
-            degree_t_stable = weighted_G_cms_123.degree(node_t, weight='weight') if node_t in weighted_G_cms_123 else 0
-
-            summed_betweenness = nx.betweenness_centrality(weighted_G_cms_ALL, weight='weight')
-            summed_betweenness_aggro[node] = summed_betweenness[node_p] + summed_betweenness[node_t]
-            
-            summed_degree_aggro = degree_p_aggro + degree_t_aggro
-            summed_degree_stable = degree_p_stable + degree_t_stable
-            summed_degrees[node] = summed_degree_aggro + summed_degree_stable / 4
-            summed_degrees_aggro[node] = summed_degree_aggro / 4
-
-
-        # Make dataframe with node, max_gdd, and summed_degree
-        df = pd.DataFrame.from_dict(sorted_max_gdds_trans, orient='index', columns=['max_gdd_trans'])
-        # add row with original max_gdd
-        df.loc['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
-
-        df['max_gdd_disrupt'] = sorted_max_gdds_disruptA.values()
-        # make column with max_gdd delta
-        df['max_gdd_delta_trans'] = df['max_gdd_trans'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
-        df['max_gdd_delta_disrupt'] = df['max_gdd_disrupt'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
-        # make column with max_gdd / original_max_gdd
-        # df['max_gdd_ratio_trans'] = df['max_gdd_trans'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
-        # df['max_gdd_ratio_disrupt'] = df['max_gdd_disrupt'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
-        df['summed_degree'] = df.index.map(summed_degrees)
-        df['summed_degree_aggro'] = df.index.map(summed_degrees_aggro)
-        df['summed_betweenness_aggro'] = df.index.map(summed_betweenness_aggro)
-        df = df.sort_values(by='max_gdd_trans', ascending=True)
-
-        print(df.head())
-
-        # plot summed_degrees_aggro vs max_gdd_disrupt
-        plt.figure(figsize=(10, 6))
-        plt.scatter(df['summed_degree_aggro'], df['max_gdd_disrupt'])
-        plt.xlabel('Summed Degree (Aggressive)')
-        plt.ylabel('Max GDD (Disrupt)')
-        plt.title('Summed Degree (Aggressive) vs Max GDD (Disrupt)')
-        # plt.ylim([1.95, 2.05])
-        plt.show()
-
-        print(df['summed_degree_aggro'])
-
-        # # plot summed_betweenness_aggro vs max_gdd_disrupt
-        # plt.figure(figsize=(10, 6))
-        # plt.scatter(df['summed_betweenness_aggro'], df['max_gdd_disrupt'])
-        # plt.xlabel('Summed Betweenness (Aggressive)')
-        # plt.ylabel('Max GDD (Disrupt)')
-        # plt.title('Summed Betweenness (Aggressive) vs Max GDD (Disrupt)')
-        # plt.ylim([1.95, 2.05])
-        # plt.show()
-
-        # # plot the distribution of max_gdd_delta_trans
-        # plt.figure(figsize=(10, 6))
-        # plt.hist()
-
-
-
-        # write to file
-        df.to_csv(f'results/diff_results/NODE_KNOCKOUTS_RESULTS_symmetric{args.symmetric}_{args.net_dens}.csv', index=True)
-
-        # %% SAVE FOR LATER
-        # PLOT 2 (WEAKER KNOCKDOWN)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6), dpi=300)
-
-
-        # make another plot as ax2 but for reduction factor = 0.8
-        selected_reduction = red_range[-1]
-
-        max_gdds = {}
-        # Right plot: GDD values over time for a single reduction (all nodes)
-        for node_base in node_knockouts.keys():
-            gdd_values = node_knockouts[node_base][selected_reduction]['gdd_values']
-            ax2.plot(t_values, gdd_values, label=f'Node {node_base}', alpha=0.5)
-            max_gdds[node_base] = np.max(gdd_values)
-
-
-        ax2.set_title(f'GDD Over Time for Single Reduction\nReduction: {selected_reduction}')
-        ax2.set_xlabel('Time')
-        # ax2.set_ylabel('GDD Value')  # Y-label is shared with the left plot
-        # ax2.legend()
-        ax2.set_xlim([0, 2])
-        ax2.grid(True)
-
-        plt.show()
-        # print(max_gdds)
-        # max_GDD_1 = max_gdds['1']
-        # max_GDD_2 = max_gdds['2']
-        # print(max_GDD_1 - max_GDD_2)
-
-        selected_reduction = red_range[-1]
-        # order nodes by max GDD
-        max_gdds = {}
-        for node_base in node_knockouts.keys():
-            max_gdds[node_base] = np.max(node_knockouts[node_base][selected_reduction]['gdd_values'])
-
-        sorted_max_gdds = {k: v for k, v in sorted(max_gdds.items(), key=lambda item: item[1])}
-
-        # get the nodes with the highest GDD
-        highest_gdd_nodes = list(sorted_max_gdds.keys())[-5:]
-        highest_gdd_nodes
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     # %%
-    if "SLURM_JOB_ID" not in os.environ:
-        # VISUALIZE DIFFUSION
-        args.visualize = True
+    summed_degrees = {}
+    summed_degrees_aggro = {}
+    summed_betweenness = {}
+    summed_betweenness_aggro = {}
+    for node in sorted_max_gdds_trans.keys():
+        node_p = node + '.p'
+        node_t = node + '.t'
+        
+        # Accessing the degree for each node directly from the DegreeView
+        degree_p_aggro = weighted_G_cms_ALL.degree(node_p, weight='weight') if node_p in weighted_G_cms_ALL else 0
+        degree_t_aggro = weighted_G_cms_ALL.degree(node_t, weight='weight') if node_t in weighted_G_cms_ALL else 0
+        degree_p_stable = weighted_G_cms_123.degree(node_p, weight='weight') if node_p in weighted_G_cms_123 else 0
+        degree_t_stable = weighted_G_cms_123.degree(node_t, weight='weight') if node_t in weighted_G_cms_123 else 0
 
-        def multiplex_net_viz(M, ax, diff_colors=False, node_colors=None, node_sizes=None, node_coords=None):
-
-            dark_red = "#8B0000"  # Dark red color
-            dark_blue = "#00008B"  # Dark blue color
-
-            # Iterate over nodes in the 'PROTEIN' layer
-            # Initialize a dictionary to hold node colors
-            for node in M.iter_nodes(layer='PROTEIN'):
-                if not diff_colors:
-                    node_colors[(node, 'PROTEIN')] = dark_red
-
-            # Iterate over nodes in the 'RNA' layer
-            for node in M.iter_nodes(layer='RNA'):
-                if not diff_colors:
-                    node_colors[(node, 'RNA')] = dark_blue
-
-
-            edge_color = "#505050"  # A shade of gray, for example
-
-            # Initialize a dictionary to hold edge colors
-            edge_colors = {}
-
-            # Assign colors to edges in the 'PROTEIN' and 'RNA' layers
-            # Assuming edges are between nodes within the same layer
-                
-            layer_colors = {'PROTEIN': "red", 'RNA': "blue"}
+        summed_betweenness = nx.betweenness_centrality(weighted_G_cms_ALL, weight='weight')
+        summed_betweenness_aggro[node] = summed_betweenness[node_p] + summed_betweenness[node_t]
+        
+        summed_degree_aggro = degree_p_aggro + degree_t_aggro
+        summed_degree_stable = degree_p_stable + degree_t_stable
+        summed_degrees[node] = summed_degree_aggro + summed_degree_stable / 4
+        summed_degrees_aggro[node] = summed_degree_aggro / 4
 
 
-            fig = pn.draw(net=M,
-                    ax=ax,
-                    show=False, 
-                    nodeColorDict=node_colors,
-                    nodeLabelDict={nl: None for nl in M.iter_node_layers()},  # Set all node labels to None explicitly
-                    nodeLabelRule={},  # Clear any label rules
-                    defaultNodeLabel=None,  # Set default label to None
-                    nodeSizeDict=node_sizes,
-                    # nodeSizeRule={"rule":"degree", "scalecoeff":0.00001},
-                    nodeCoords=node_coords,
-                    edgeColorDict=edge_colors,
-                    defaultEdgeAlpha=0.08,
-                    layerColorDict=layer_colors,
-                    defaultLayerAlpha=0.075,
-                    # camera_dist=6,
-                    # layerLabelRule={},  # Clear any label rules
-                    # defaultLayerLabel=None,  # Set default label to None
-                    # azim=45,
-                    # elev=25
-                    )
+    # Make dataframe with node, max_gdd, and summed_degree
+    df = pd.DataFrame.from_dict(sorted_max_gdds_trans, orient='index', columns=['max_gdd_trans'])
+    # add row with original max_gdd
+    df.loc['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
 
-            # print(type(fig))
-
-            return fig
-
-        # %%
-
-        t_values = np.linspace(0, 10, 500)
-        # visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
+    df['max_gdd_disrupt'] = sorted_max_gdds_disruptA.values()
+    # make column with max_gdd delta
+    df['max_gdd_delta_trans'] = df['max_gdd_trans'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
+    df['max_gdd_delta_disrupt'] = df['max_gdd_disrupt'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
+    # make column with max_gdd / original_max_gdd
+    # df['max_gdd_ratio_trans'] = df['max_gdd_trans'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
+    # df['max_gdd_ratio_disrupt'] = df['max_gdd_disrupt'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
+    df['summed_degree'] = df.index.map(summed_degrees)
+    df['summed_degree_aggro'] = df.index.map(summed_degrees_aggro)
+    df['summed_betweenness_aggro'] = df.index.map(summed_betweenness_aggro)
+    df = df.sort_values(by='max_gdd_trans', ascending=True)
 
 
-        def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
-            # Load the pickle file
-            with open('results/diff_results/Pathway_False_target_X_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
-                results = pkl.load(f)
+    # write to file
+    df.to_csv(f'results/diff_results/NODE_KNOCKOUTS_RESULTS_symmetric{args.symmetric}_{args.net_dens}.csv', index=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# %%
+if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
+    # VISUALIZE DIFFUSION
+    def multiplex_net_viz(M, ax, diff_colors=False, node_colors=None, node_sizes=None, node_coords=None):
+
+        dark_red = "#8B0000"  # Dark red color
+        dark_blue = "#00008B"  # Dark blue color
+
+        # Iterate over nodes in the 'PROTEIN' layer
+        # Initialize a dictionary to hold node colors
+        for node in M.iter_nodes(layer='PROTEIN'):
+            if not diff_colors:
+                node_colors[(node, 'PROTEIN')] = dark_red
+
+        # Iterate over nodes in the 'RNA' layer
+        for node in M.iter_nodes(layer='RNA'):
+            if not diff_colors:
+                node_colors[(node, 'RNA')] = dark_blue
+
+
+        edge_color = "#505050"  # A shade of gray, for example
+
+        # Initialize a dictionary to hold edge colors
+        edge_colors = {}
+
+        # Assign colors to edges in the 'PROTEIN' and 'RNA' layers
+        # Assuming edges are between nodes within the same layer
             
-            time_resolved_kernels = results['XRCC1'][0.05]['vis_kernels'] #  visualisation_kernel[:7] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
-
-            max_gdd = 'max_gdd_disrupt'
-
-            max_gdd = results['XRCC1'][0.05][max_gdd] # 0 # results['ACACA'][0.00]['max_gdd_index'] # BIRC2
-            gdd_values_trans = results['XRCC1'][0.05]['gdd_values_trans']
-            max_gdd_index = np.argmax(np.sqrt(gdd_values_trans) == max_gdd)
-            max_gdd_time = t_values[max_gdd_index]
-            # Get the corresponding kernel from vis_kernels
-            corresponding_kernel = results['XRCC1'][0.05]['vis_kernels'][max_gdd_index]
-            time_points_to_plot = [0, max_gdd_time]  # Initial and max GDD time
-            # Add a time point after max_gdd_time, for example, one step further in the t_values array
-            # Calculate the next index
-            next_index = min(len(t_values)-1, 75)
-            # Add the time point to the list
-            time_points_to_plot.append(t_values[next_index])
-            # Extract the kernels for the selected time points
-            selected_kernels = [results['XRCC1'][0.05]['vis_kernels'][int(np.round(time_point * (len(t_values) - 1) / 10))] for time_point in time_points_to_plot]
+        layer_colors = {'PROTEIN': "red", 'RNA': "blue"}
 
 
-            # Assume 'weighted_G_cms_ALL' is your graph
-            node_order = list(weighted_G.nodes())
-            orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
-            nodes_with_degree = [node for node in node_order if node not in orphans]
-            # Create a subgraph with these nodes
-            subgraph = weighted_G_cms_ALL.subgraph(nodes_with_degree)
-            # Now calculate the layout using only the nodes in the subgraph
-            pos = nx.spring_layout(subgraph)
-            # The orphan nodes will be assigned a default position as they are not included in the subgraph
-            prot_node_positions = pos.copy()
-            for node in weighted_G_cms_ALL.nodes():
-                if node not in prot_node_positions and node.endswith('.p'):
-                    prot_node_positions[node] = (0,0)  # or any other default position
+        fig = pn.draw(net=M,
+                ax=ax,
+                show=False, 
+                nodeColorDict=node_colors,
+                nodeLabelDict={nl: None for nl in M.iter_node_layers()},  # Set all node labels to None explicitly
+                nodeLabelRule={},  # Clear any label rules
+                defaultNodeLabel=None,  # Set default label to None
+                nodeSizeDict=node_sizes,
+                # nodeSizeRule={"rule":"degree", "scalecoeff":0.00001},
+                nodeCoords=node_coords,
+                edgeColorDict=edge_colors,
+                defaultEdgeAlpha=0.08,
+                layerColorDict=layer_colors,
+                defaultLayerAlpha=0.075,
+                # camera_dist=6,
+                # layerLabelRule={},  # Clear any label rules
+                # defaultLayerLabel=None,  # Set default label to None
+                # azim=45,
+                # elev=25
+                )
 
-            # Define the suffixes for each layer
-            suffixes = {'PROTEIN': '.p', 'RNA': '.t'}
+        # print(type(fig))
 
-            # Create an index mapping from the suffixed node name to its index
-            node_indices = {node: i for i, node in enumerate(node_order)}
-            node_colors = {}  
-            node_sizes = {} 
-            node_coords = {}
-
-            for node, pos in prot_node_positions.items():
-                stripped_node = node.rstrip('.p')  # Remove the suffix to match identifiers in M
-                node_coords[stripped_node] = tuple(pos)
-
-            max_deg = 28
-            min_deg = 1
-            max_scaled_size = 3.5
-            for nl in M.iter_node_layers():  # Iterating over all node-layer combinations
-                node, layer = nl  # Split the node-layer tuple
-                neighbors = list(M._iter_neighbors_out(nl, dims=None))  # Get all neighbors for the node-layer tuple
-                degree = len(neighbors)  # The degree is the number of neighbors
-                normalized_degree = (degree - min_deg) / (max_deg - min_deg)
-                scaled_degree = 1 + normalized_degree * (max_scaled_size - 1)
-
-                # Assign to node sizes with scaling factor
-                node_sizes[nl] = scaled_degree * 0.02
-
-
-            # Set up a 3x3 subplot grid with 3D projection
-            fig = plt.figure(figsize=(15, 8))
-
-            axs_diffusion = [fig.add_subplot(2, 3, i + 1, projection='3d') for i in range(3)]
-            axs_gdd = [fig.add_subplot(2, 3, i + 4) for i in range(3)]
-
-            j = 0
-            global_max = max(kernel.max() for kernel in time_resolved_kernels)
-            norm = Normalize(vmin=0, vmax=1)
-            # print(global_max)
-            # Ensure you have a list of the 25 time-resolved kernels named 'time_resolved_kernels'
-            for ax, kernel, time_point in zip(axs_diffusion, selected_kernels, time_points_to_plot):
-                # Create the unit vector e_j with 1 at the jth index and 0 elsewhere
-                e_j = np.zeros(len(weighted_G.nodes()))
-                e_j[j] = 100
-
-                
-                # Multiply the kernel with e_j to simulate diffusion from node j
-                diffusion_state = kernel @ e_j
-                # order the diffusion state in descending order
-                diffusion_state = sorted(diffusion_state, reverse=True)
-
-                # Now, update node colors and sizes based on diffusion_state
-                for layer in M.iter_layers():  # Iterates through all nodes in M
-                    # Determine the layer of the node for color and size settings
-                    for node in M.iter_nodes(layer=layer):
-                        # Append the appropriate suffix to the node name to match the format in node_order
-                        suffixed_node = node + suffixes[layer]
-                        # Use the suffixed node name to get the corresponding index from the node_order
-                        index = node_indices[suffixed_node]
-
-                        # Map the diffusion state to a color and update node_colors and node_sizes
-                        color = plt.cm.viridis(diffusion_state[index])  # Mapping color based on diffusion state
-                        node_colors[(node, layer)] = color
-                        # node_sizes[(node, layer)] = 0.03  # Or some logic to vary size with diffusion state
-
-                # Now use your updated visualization function with the new colors and sizes
-                diff_fig = multiplex_net_viz(M, ax, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
-
-                ax.set_title(f"T = {time_point:.2f}")
-
-            for ax, time_point in zip(axs_gdd, time_points_to_plot):
-                # Plot all gdd_values_trans
-                ax.plot(t_values[:150], gdd_values_trans[:150])
-
-                # Add a vertical line at the corresponding time_point
-                ax.axvline(x=time_point, color='red', linestyle='dotted', label=f'Time Point', linewidth=2)
-
-                # ax.set_title(f"GDD values with time point T = {time_point:.2f}")
-                # ax.set_xlabel('Time')
-                # ax.set_ylabel('GDD Value')
-                if time_point == 0:
-                    ax.legend()
-                    ax.set_ylabel('GDD Value')
-                elif time_point == max_gdd_time:
-                    ax.set_xlabel('Time')
-                # ax.legend()
-
-            # Adjust layout to prevent overlap
-            # plt.tight_layout()
-            # plt.subplots_adjust(top=0.95)  # Adjust the top space to fit the main title
-            # plt.subplots_adjust(right=0.8)
-            # cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
-            # plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
-            # savethefigure
-            plt.savefig('results/diff_results/diffusion_figure.svg') # make rc.param no font export
-
-            # Display the figure
-            plt.tight_layout()
-            plt.show()
-
-        if args.visualize:
-            multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
-
+        return fig
 
     # %%
+    # visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
 
-    # 4x4 diffusion plot
-    t_values_viz = np.linspace(0, 3, 10)
-    visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
 
+    # NEXT: FIX THE DOUBLE 0 TIME POINT in PLOT
+    # node_for_viz is the knocked out node, can't work as a delta_impulse node
 
     def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
         # Load the pickle file
-        with open('results/diff_results/Pathway_False_target_XAMNC_GDDs_ks308_permuNone_symmetricTrue_low_dens.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
+        with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
             results = pkl.load(f)
         
-        # with open('results/diff_results/Pathway_False_target_BCGGS_GDDs_ks308_permuNone.pkl', 'rb') as f:
-        #     results = pkl.load(f)
-        
-        time_resolved_kernels =  visualisation_kernel[:5] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
+        node_order = list(weighted_G.nodes())
+        # # select random node from graph
+        # nodes_for_selection = [node for node in node_order if not node.startswith(node_for_viz)]
+        # delta_impulse_node = random.choice(nodes_for_selection).rstrip('.t').rstrip('.p')
+        # print(f"Selected node: {delta_impulse_node}")
+
+        time_resolved_kernels = results[node_for_viz][0.05]['vis_kernels']
+        max_gdd_type = 'max_gdd_disruptA'
+        max_gdd = results[node_for_viz][0.05][max_gdd_type]
+        print(f"Max GDD: {max_gdd}")
+
+        gdd_values_disruptA = results[node_for_viz][0.05]['gdd_values_disruptA']
+        print(f"Number of GDD values: {len(gdd_values_disruptA)}")
+        print(f"First few GDD values: {gdd_values_disruptA[:5]}...")
+
+        # Find the index of the value closest to max_gdd
+        max_gdd_index = np.argmin(np.abs(np.sqrt(gdd_values_disruptA) - max_gdd))
+        print(f"Max GDD index in gdd_values_disruptA: {max_gdd_index}")
+
+        # Calculate the scaled index for vis_kernels
+        num_kernels = len(time_resolved_kernels)
+        scaled_index = int((max_gdd_index / len(gdd_values_disruptA)) * num_kernels) + 1
+        print(f"Number of vis_kernels: {num_kernels}")
+        print(f"Scaled index for vis_kernels: {scaled_index}")
+
+        # Ensure the scaled index is within bounds
+        scaled_index = min(scaled_index, num_kernels - 1)
+
+        corresponding_kernel = time_resolved_kernels[scaled_index]
+        print(f"Shape of corresponding kernel: {corresponding_kernel.shape}")
+
+        max_gdd_time = t_values[max_gdd_index]
+        print(f"Max GDD time: {max_gdd_time}")
+
+        time_points_to_plot = [0, max_gdd_time]
+        next_index = min(len(t_values)-1, 15)
+        time_points_to_plot.append(t_values[next_index])
+
+        # Safely extract the kernels for the selected time points
+        selected_kernels = []
+        for time_point in time_points_to_plot:
+            index = min(int((time_point / t_values[-1]) * num_kernels), num_kernels - 1)
+            selected_kernels.append(time_resolved_kernels[index])
+
 
         # Assume 'weighted_G_cms_ALL' is your graph
-        node_order = list(weighted_G.nodes())
-        # get indices of nodes that end with '.t'
-        t_indices = [i for i, node in enumerate(node_order) if node.endswith('.t')]
-        #consistent node positions
+        # print orphans
 
-        orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
-        nodes_with_degree = [node for node in node_order if node not in orphans]
-
+        # orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
+        orphan_prots = [orph + '.p' for orph in orphan_prots_ALL]
+        nodes_with_degree = [node for node in node_order if node not in orphan_prots]
         # Create a subgraph with these nodes
         subgraph = weighted_G_cms_ALL.subgraph(nodes_with_degree)
-
         # Now calculate the layout using only the nodes in the subgraph
         pos = nx.spring_layout(subgraph)
-
-        # print(pos)
-
-        # If you want to use the same positions for the nodes in the original graph, you can do so. 
-        # The orphan nodes will be assigned a default position as they are not included in the subgraph.
+        # The orphan nodes will be assigned a default position as they are not included in the subgraph
         prot_node_positions = pos.copy()
         for node in weighted_G_cms_ALL.nodes():
             if node not in prot_node_positions and node.endswith('.p'):
                 prot_node_positions[node] = (0,0)  # or any other default position
-
-
-        # Set up a 3x3 subplot grid with 3D projection
-        fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(20, 10), subplot_kw={'projection': '3d'})
-        axs = axes.flatten()  # Flatten the axes array for easy iteration
-        # fig.suptitle('Network Diffusion over 25 Time Points')
-        
 
         # Define the suffixes for each layer
         suffixes = {'PROTEIN': '.p', 'RNA': '.t'}
@@ -1177,8 +998,6 @@ if "SLURM_JOB_ID" not in os.environ:
         for node, pos in prot_node_positions.items():
             stripped_node = node.rstrip('.p')  # Remove the suffix to match identifiers in M
             node_coords[stripped_node] = tuple(pos)
-            # node_coords[stripped_node] = (1,1)
-
 
         max_deg = 28
         min_deg = 1
@@ -1190,23 +1009,26 @@ if "SLURM_JOB_ID" not in os.environ:
             normalized_degree = (degree - min_deg) / (max_deg - min_deg)
             scaled_degree = 1 + normalized_degree * (max_scaled_size - 1)
 
-            # Assign to node sizes with your scaling factor
-            node_sizes[nl] = scaled_degree * 0.02  # Adjust the scaling factor as needed
+            # Assign to node sizes with scaling factor
+            node_sizes[nl] = scaled_degree * 0.02
 
 
+        # Set up a 3x3 subplot grid with 3D projection
+        fig = plt.figure(figsize=(15, 8))
+
+        axs_diffusion = [fig.add_subplot(2, 3, i + 1, projection='3d') for i in range(3)]
+        axs_gdd = [fig.add_subplot(2, 3, i + 4) for i in range(3)]
 
         j = 0
         global_max = max(kernel.max() for kernel in time_resolved_kernels)
         norm = Normalize(vmin=0, vmax=1)
         # print(global_max)
         # Ensure you have a list of the 25 time-resolved kernels named 'time_resolved_kernels'
-        for idx, (ax, kernel) in enumerate(zip(axs, time_resolved_kernels[:4])):
-            # if idx % 5 == 0:
+        for ax, kernel, time_point in zip(axs_diffusion, selected_kernels, time_points_to_plot):
             # Create the unit vector e_j with 1 at the jth index and 0 elsewhere
             e_j = np.zeros(len(weighted_G.nodes()))
             e_j[j] = 100
 
-            # e_j = np.ones(len(weighted_G_cms_ALL.nodes()))
             
             # Multiply the kernel with e_j to simulate diffusion from node j
             diffusion_state = kernel @ e_j
@@ -1230,35 +1052,183 @@ if "SLURM_JOB_ID" not in os.environ:
             # Now use your updated visualization function with the new colors and sizes
             diff_fig = multiplex_net_viz(M, ax, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
 
-            ax.set_title(f"T = {idx * (6/25):.2f}")
+            ax.set_title(f"T = {time_point:.2f}")
+
+        for ax, time_point in zip(axs_gdd, time_points_to_plot):
+            # Plot all gdd_values_disruptA
+            ax.plot(t_values[:150], gdd_values_disruptA[:150])
+
+            # Add a vertical line at the corresponding time_point
+            ax.axvline(x=time_point, color='red', linestyle='dotted', label=f'Time Point', linewidth=2)
+
+            # ax.set_title(f"GDD values with time point T = {time_point:.2f}")
+            # ax.set_xlabel('Time')
+            # ax.set_ylabel('GDD Value')
+            if time_point == 0:
+                ax.legend()
+                ax.set_ylabel(r'$\xi$ Value')
+            elif time_point == max_gdd_time:
+                ax.set_xlabel('Time')
+            # ax.legend()
 
         # Adjust layout to prevent overlap
         # plt.tight_layout()
         # plt.subplots_adjust(top=0.95)  # Adjust the top space to fit the main title
-        plt.subplots_adjust(right=0.8)
-        cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
-        plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
+        # plt.subplots_adjust(right=0.8)
+        # cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
+        # plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
         # savethefigure
-        # plt.savefig('diffusion_figure.png', dpi=600) # make rc.param no font export
+        plt.savefig('results/diff_results/diffusion_figure.svg') # make rc.param no font export
 
         # Display the figure
         plt.tight_layout()
-        # save as svg
-        plt.savefig('results/diff_results/diffusion_figure2.svg') # make rc.param no font export
         plt.show()
 
-    args.visualize = True
-    if args.visualize:
-        multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
+    multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
 
-    # %%
-    # make a standalone figure of the colorbar
-    fig, ax = plt.subplots(figsize=(1, 6), dpi = 300)
+
+# %%
+
+# 4x4 diffusion plot
+t_values_viz = np.linspace(0, 3, 10)
+visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
+
+
+def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
+    # Load the pickle file
+    with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
+        results = pkl.load(f)
+    
+    # with open('results/diff_results/Pathway_False_target_BCGGS_GDDs_ks308_permuNone.pkl', 'rb') as f:
+    #     results = pkl.load(f)
+    
+    time_resolved_kernels =  visualisation_kernel[:5] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
+
+    # Assume 'weighted_G_cms_ALL' is your graph
+    node_order = list(weighted_G.nodes())
+    # get indices of nodes that end with '.t'
+    t_indices = [i for i, node in enumerate(node_order) if node.endswith('.t')]
+    #consistent node positions
+
+    orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
+    nodes_with_degree = [node for node in node_order if node not in orphans]
+
+    # Create a subgraph with these nodes
+    subgraph = weighted_G_cms_ALL.subgraph(nodes_with_degree)
+
+    # Now calculate the layout using only the nodes in the subgraph
+    pos = nx.spring_layout(subgraph)
+
+    # print(pos)
+
+    # If you want to use the same positions for the nodes in the original graph, you can do so. 
+    # The orphan nodes will be assigned a default position as they are not included in the subgraph.
+    prot_node_positions = pos.copy()
+    for node in weighted_G_cms_ALL.nodes():
+        if node not in prot_node_positions and node.endswith('.p'):
+            prot_node_positions[node] = (0,0)  # or any other default position
+
+
+    # Set up a 3x3 subplot grid with 3D projection
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(20, 10), subplot_kw={'projection': '3d'})
+    axs = axes.flatten()  # Flatten the axes array for easy iteration
+    # fig.suptitle('Network Diffusion over 25 Time Points')
+    
+
+    # Define the suffixes for each layer
+    suffixes = {'PROTEIN': '.p', 'RNA': '.t'}
+
+    # Create an index mapping from the suffixed node name to its index
+    node_indices = {node: i for i, node in enumerate(node_order)}
+    node_colors = {}  
+    node_sizes = {} 
+    node_coords = {}
+
+    for node, pos in prot_node_positions.items():
+        stripped_node = node.rstrip('.p')  # Remove the suffix to match identifiers in M
+        node_coords[stripped_node] = tuple(pos)
+        # node_coords[stripped_node] = (1,1)
+
+
+    max_deg = 28
+    min_deg = 1
+    max_scaled_size = 3.5
+    for nl in M.iter_node_layers():  # Iterating over all node-layer combinations
+        node, layer = nl  # Split the node-layer tuple
+        neighbors = list(M._iter_neighbors_out(nl, dims=None))  # Get all neighbors for the node-layer tuple
+        degree = len(neighbors)  # The degree is the number of neighbors
+        normalized_degree = (degree - min_deg) / (max_deg - min_deg)
+        scaled_degree = 1 + normalized_degree * (max_scaled_size - 1)
+
+        # Assign to node sizes with your scaling factor
+        node_sizes[nl] = scaled_degree * 0.02  # Adjust the scaling factor as needed
+
+
+
+    j = 0
+    global_max = max(kernel.max() for kernel in time_resolved_kernels)
     norm = Normalize(vmin=0, vmax=1)
-    cbar = fig.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=ax, orientation='vertical', label='Concentration')
+    # print(global_max)
+    # Ensure you have a list of the 25 time-resolved kernels named 'time_resolved_kernels'
+    for idx, (ax, kernel) in enumerate(zip(axs, time_resolved_kernels[:4])):
+        # if idx % 5 == 0:
+        # Create the unit vector e_j with 1 at the jth index and 0 elsewhere
+        e_j = np.zeros(len(weighted_G.nodes()))
+        e_j[j] = 100
 
+        # e_j = np.ones(len(weighted_G_cms_ALL.nodes()))
+        
+        # Multiply the kernel with e_j to simulate diffusion from node j
+        diffusion_state = kernel @ e_j
+        # order the diffusion state in descending order
+        diffusion_state = sorted(diffusion_state, reverse=True)
+
+        # Now, update node colors and sizes based on diffusion_state
+        for layer in M.iter_layers():  # Iterates through all nodes in M
+            # Determine the layer of the node for color and size settings
+            for node in M.iter_nodes(layer=layer):
+                # Append the appropriate suffix to the node name to match the format in node_order
+                suffixed_node = node + suffixes[layer]
+                # Use the suffixed node name to get the corresponding index from the node_order
+                index = node_indices[suffixed_node]
+
+                # Map the diffusion state to a color and update node_colors and node_sizes
+                color = plt.cm.viridis(diffusion_state[index])  # Mapping color based on diffusion state
+                node_colors[(node, layer)] = color
+                # node_sizes[(node, layer)] = 0.03  # Or some logic to vary size with diffusion state
+
+        # Now use your updated visualization function with the new colors and sizes
+        diff_fig = multiplex_net_viz(M, ax, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
+
+        ax.set_title(f"T = {idx * (6/25):.2f}")
+
+    # Adjust layout to prevent overlap
+    # plt.tight_layout()
+    # plt.subplots_adjust(top=0.95)  # Adjust the top space to fit the main title
+    plt.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
+    plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
+    # savethefigure
+    # plt.savefig('diffusion_figure.png', dpi=600) # make rc.param no font export
+
+    # Display the figure
+    plt.tight_layout()
+    # save as svg
+    plt.savefig('results/diff_results/diffusion_figure2.svg') # make rc.param no font export
     plt.show()
-    plt.savefig('colorbar.svg')
+
+args.visualize = True
+if args.visualize:
+    multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
+
+# %%
+# make a standalone figure of the colorbar
+fig, ax = plt.subplots(figsize=(1, 6), dpi = 300)
+norm = Normalize(vmin=0, vmax=1)
+cbar = fig.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=ax, orientation='vertical', label='Concentration')
+
+plt.show()
+plt.savefig('colorbar.svg')
 
 
 
