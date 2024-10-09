@@ -8,7 +8,7 @@ The tool has been tested on colorectal cancer datasets.
 
 ![Alt text](MONIKA_arrow.png)
 
-### Installation
+## Installation
 To make installation easy, it is recommended to use a conda environment. In the directory, simply run 
 
 edit the environment.yml file, change prefix to where you want to install the environment (prefix: path/to/anaconda3/envs/monika)
@@ -19,18 +19,18 @@ conda activate monika
 
 pip install pymnet==0.2.0
 
-### Data
+## Data
 The multi-omic CRC data used for testing is included in the repository. It is sourced from: https://www.linkedomics.org/data_download/TCGA-COADREAD/. It contains patient-coupled samples for both transcriptomics, proteomics and RPPA (Reverse-Phase Protein Array).
 
-### Full Pipeline Run
+## Full Pipeline Run
 Run the scripts in the following order, with default parameter settings, to infer networks and determine critical genes via diffusion analysis.
 
-#### omics_data_processing.py
+### omics_data_processing.py
 - Matches protein and RNA data
 - Winsorizes outliers
 - Checks for normality of variables and transforms them
 
-#### network_inference.py
+### network_inference.py
 - Executes piglasso.py for generating edge count distributions
 - Infers omics networks from edge counts (RNA + protein)
 	- See "Running on HPC" below to run this step in under 10 minutes
@@ -38,16 +38,16 @@ Run the scripts in the following order, with default parameter settings, to infe
 
 *Results in results/net_results: Gives info on the inferred omics network layers*
 
-#### network_diffusion.py
+### network_diffusion.py
 - Performs knockout analysis 
 
 Results in results/diff_results: 
 - NODE_KNOCKOUTS_RESULTS_symmetricTrue_low_dens.csv is a spreadsheet containing results on the effect of knockouts on the network, as well as investigating potential increases in similarity between cms123 and cmsALL
 
-![[diffusion_animation.gif]]
+[](diffusion_animation.gif)
 
 
-### Running on HPC
+## Running on HPC
 The most time-consuming step by far is network_inference.py. 
 If you want to infer the network within minutes, rather than several hours, just upload the MONIKA folder to your HPC environment (NOTE: upload the folder AFTER running omics_data_processing.py but BEFORE running network_inference.py. This ensures that the processed data is on the cluster). 
 
