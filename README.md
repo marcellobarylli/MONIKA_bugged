@@ -9,9 +9,9 @@ The tool has been tested on colorectal cancer datasets.
 ![Alt text](MONIKA_arrow.png)
 
 ## Installation
-To make installation easy, it is recommended to use a conda environment. In the directory, simply run 
+To make installation easy, it is recommended to use a conda environment. In the directory, edit the environment.yml file, change prefix to where you want to install the environment (prefix: path/to/anaconda3/envs/monika)
 
-edit the environment.yml file, change prefix to where you want to install the environment (prefix: path/to/anaconda3/envs/monika)
+Then, simply run:
 
 conda env create -f environment.yml
 
