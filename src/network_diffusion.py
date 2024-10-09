@@ -19,6 +19,7 @@ from scipy.sparse.linalg import eigsh
 from scipy.sparse import issparse
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
+import matplotlib.animation as animation
 import matplotlib.cm as cm
 import math
 import random
@@ -549,7 +550,7 @@ def run_knockout_analysis(G_aggro,
 
         if viz_bool == True:
             if 'SLURM_JOB_ID' in os.environ:
-                diff_window = 10
+                diff_window = 1
             else:
                 diff_window = 1
             results[knockout_target][reduction]['vis_kernels'] = [
@@ -569,7 +570,7 @@ degree_dict = dict(weighted_G_cms_ALL.degree(weighted_G_cms_ALL.nodes()))
 hub_nodes = sorted(degree_dict, key=lambda x: degree_dict[x], reverse=True)[:args.koh]
 low_nodes = sorted(degree_dict, key=lambda x: degree_dict[x])[:args.kob]
 
-t_values = np.linspace(0.01, 10, 250)
+t_values = np.linspace(0.0001, 3, 100)
 
 if args.koh == 0:
     nodes_to_investigate_bases = list(set([node.split('.')[0] for node in weighted_G_cms_ALL.nodes()])) # KNOCK OUT ALL NODES FOR FIXED REDUCTION, NODE COMPARISON
@@ -586,6 +587,12 @@ else:
     nodes_subset = nodes_to_investigate_bases
     rank = 0
     size = 1
+
+# select only one node for visualization
+rng = np.random.default_rng(69)
+node_for_viz = 'EIF4G1' # rng.choice(nodes_subset)
+print(f'VIZ NODE: {node_for_viz}')
+
 
 # TEST NET
 if args.test_net:
@@ -635,7 +642,6 @@ local_target_results = {}
 
 # NODE knockouts
 # choose random node from the subset
-node_for_viz = np.random.choice(nodes_subset)
 with tqdm(total=len(nodes_subset), desc=f"Calculating {len(nodes_subset)} gene knockouts, progress") as pbar:
     for node in nodes_subset:
         if node == node_for_viz:
@@ -784,8 +790,6 @@ if "SLURM_JOB_ID" not in os.environ:
     # print the length of the overlap of the top 10 nodes
     overlap = set(list(sorted_max_gdds_disruptA.keys())[:num_top_genes]).intersection(set(list(sorted_max_gdds_disruptS.keys())[:num_top_genes]))
 
-    # print(f'overlap: {len(overlap)}')
-
     # print the ones that are not in the overlap
     print('The following knockouts significantly disrupt the aggressive subtype, but not the stable subtype: ')
     for key, value in list(sorted_max_gdds_disruptA.items())[:num_top_genes]:
@@ -844,22 +848,9 @@ if "SLURM_JOB_ID" not in os.environ:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # %%
 if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
-    # VISUALIZE DIFFUSION
+    # VISUALIZE MULTIPLEX NETWORK
     def multiplex_net_viz(M, ax, diff_colors=False, node_colors=None, node_sizes=None, node_coords=None):
 
         dark_red = "#8B0000"  # Dark red color
@@ -880,13 +871,8 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
         edge_color = "#505050"  # A shade of gray, for example
 
         # Initialize a dictionary to hold edge colors
-        edge_colors = {}
-
-        # Assign colors to edges in the 'PROTEIN' and 'RNA' layers
-        # Assuming edges are between nodes within the same layer
-            
+        edge_colors = {}          
         layer_colors = {'PROTEIN': "red", 'RNA': "blue"}
-
 
         fig = pn.draw(net=M,
                 ax=ax,
@@ -899,6 +885,7 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
                 # nodeSizeRule={"rule":"degree", "scalecoeff":0.00001},
                 nodeCoords=node_coords,
                 edgeColorDict=edge_colors,
+                edgeweight=0.7,
                 defaultEdgeAlpha=0.08,
                 layerColorDict=layer_colors,
                 defaultLayerAlpha=0.075,
@@ -909,58 +896,32 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
                 # elev=25
                 )
 
-        # print(type(fig))
 
         return fig
 
     # %%
-    # visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
-
-
-    # NEXT: FIX THE DOUBLE 0 TIME POINT in PLOT
-    # node_for_viz is the knocked out node, can't work as a delta_impulse node
-
     def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
         # Load the pickle file
         with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
             results = pkl.load(f)
         
+        # Get nodes from multiplex network
         node_order = list(weighted_G.nodes())
-        # # select random node from graph
-        # nodes_for_selection = [node for node in node_order if not node.startswith(node_for_viz)]
-        # delta_impulse_node = random.choice(nodes_for_selection).rstrip('.t').rstrip('.p')
-        # print(f"Selected node: {delta_impulse_node}")
-
-        time_resolved_kernels = results[node_for_viz][0.05]['vis_kernels']
+        time_resolved_kernels = results[node_for_viz][0.05]['vis_kernels'] # Kernels of all time points
         max_gdd_type = 'max_gdd_disruptA'
         max_gdd = results[node_for_viz][0.05][max_gdd_type]
-        print(f"Max GDD: {max_gdd}")
-
         gdd_values_disruptA = results[node_for_viz][0.05]['gdd_values_disruptA']
-        print(f"Number of GDD values: {len(gdd_values_disruptA)}")
-        print(f"First few GDD values: {gdd_values_disruptA[:5]}...")
-
         # Find the index of the value closest to max_gdd
         max_gdd_index = np.argmin(np.abs(np.sqrt(gdd_values_disruptA) - max_gdd))
-        print(f"Max GDD index in gdd_values_disruptA: {max_gdd_index}")
-
         # Calculate the scaled index for vis_kernels
         num_kernels = len(time_resolved_kernels)
-        scaled_index = int((max_gdd_index / len(gdd_values_disruptA)) * num_kernels) + 1
-        print(f"Number of vis_kernels: {num_kernels}")
-        print(f"Scaled index for vis_kernels: {scaled_index}")
-
+        scaled_index = int((max_gdd_index / len(gdd_values_disruptA)) * num_kernels)
         # Ensure the scaled index is within bounds
         scaled_index = min(scaled_index, num_kernels - 1)
-
         corresponding_kernel = time_resolved_kernels[scaled_index]
-        print(f"Shape of corresponding kernel: {corresponding_kernel.shape}")
-
         max_gdd_time = t_values[max_gdd_index]
-        print(f"Max GDD time: {max_gdd_time}")
-
         time_points_to_plot = [0, max_gdd_time]
-        next_index = min(len(t_values)-1, 15)
+        next_index = min(len(t_values)-1, 35)
         time_points_to_plot.append(t_values[next_index])
 
         # Safely extract the kernels for the selected time points
@@ -969,17 +930,13 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
             index = min(int((time_point / t_values[-1]) * num_kernels), num_kernels - 1)
             selected_kernels.append(time_resolved_kernels[index])
 
-
-        # Assume 'weighted_G_cms_ALL' is your graph
-        # print orphans
-
-        # orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
+        # Leave out the orphans in the position calculation
         orphan_prots = [orph + '.p' for orph in orphan_prots_ALL]
         nodes_with_degree = [node for node in node_order if node not in orphan_prots]
         # Create a subgraph with these nodes
         subgraph = weighted_G_cms_ALL.subgraph(nodes_with_degree)
         # Now calculate the layout using only the nodes in the subgraph
-        pos = nx.spring_layout(subgraph)
+        pos = nx.spring_layout(subgraph, seed=48, weight=0.7, k=2/np.sqrt(154))
         # The orphan nodes will be assigned a default position as they are not included in the subgraph
         prot_node_positions = pos.copy()
         for node in weighted_G_cms_ALL.nodes():
@@ -999,6 +956,7 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
             stripped_node = node.rstrip('.p')  # Remove the suffix to match identifiers in M
             node_coords[stripped_node] = tuple(pos)
 
+        # Re-sizing the nodes in the visualisation
         max_deg = 28
         min_deg = 1
         max_scaled_size = 3.5
@@ -1010,12 +968,10 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
             scaled_degree = 1 + normalized_degree * (max_scaled_size - 1)
 
             # Assign to node sizes with scaling factor
-            node_sizes[nl] = scaled_degree * 0.02
+            node_sizes[nl] = scaled_degree * 0.015
 
-
-        # Set up a 3x3 subplot grid with 3D projection
+        # Set up a 2x3 subplot grid with 3D projection
         fig = plt.figure(figsize=(15, 8))
-
         axs_diffusion = [fig.add_subplot(2, 3, i + 1, projection='3d') for i in range(3)]
         axs_gdd = [fig.add_subplot(2, 3, i + 4) for i in range(3)]
 
@@ -1023,13 +979,11 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
         global_max = max(kernel.max() for kernel in time_resolved_kernels)
         norm = Normalize(vmin=0, vmax=1)
         # print(global_max)
-        # Ensure you have a list of the 25 time-resolved kernels named 'time_resolved_kernels'
         for ax, kernel, time_point in zip(axs_diffusion, selected_kernels, time_points_to_plot):
             # Create the unit vector e_j with 1 at the jth index and 0 elsewhere
             e_j = np.zeros(len(weighted_G.nodes()))
             e_j[j] = 100
 
-            
             # Multiply the kernel with e_j to simulate diffusion from node j
             diffusion_state = kernel @ e_j
             # order the diffusion state in descending order
@@ -1043,42 +997,27 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
                     suffixed_node = node + suffixes[layer]
                     # Use the suffixed node name to get the corresponding index from the node_order
                     index = node_indices[suffixed_node]
-
                     # Map the diffusion state to a color and update node_colors and node_sizes
                     color = plt.cm.viridis(diffusion_state[index])  # Mapping color based on diffusion state
                     node_colors[(node, layer)] = color
-                    # node_sizes[(node, layer)] = 0.03  # Or some logic to vary size with diffusion state
 
-            # Now use your updated visualization function with the new colors and sizes
+            # Now use updated visualization function with the new colors and sizes
             diff_fig = multiplex_net_viz(M, ax, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
-
             ax.set_title(f"T = {time_point:.2f}")
 
         for ax, time_point in zip(axs_gdd, time_points_to_plot):
             # Plot all gdd_values_disruptA
             ax.plot(t_values[:150], gdd_values_disruptA[:150])
-
             # Add a vertical line at the corresponding time_point
             ax.axvline(x=time_point, color='red', linestyle='dotted', label=f'Time Point', linewidth=2)
-
-            # ax.set_title(f"GDD values with time point T = {time_point:.2f}")
-            # ax.set_xlabel('Time')
-            # ax.set_ylabel('GDD Value')
             if time_point == 0:
                 ax.legend()
                 ax.set_ylabel(r'$\xi$ Value')
             elif time_point == max_gdd_time:
                 ax.set_xlabel('Time')
-            # ax.legend()
 
-        # Adjust layout to prevent overlap
-        # plt.tight_layout()
-        # plt.subplots_adjust(top=0.95)  # Adjust the top space to fit the main title
-        # plt.subplots_adjust(right=0.8)
-        # cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
-        # plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
         # savethefigure
-        plt.savefig('results/diff_results/diffusion_figure.svg') # make rc.param no font export
+        plt.savefig('results/diff_results/diffusion_with_GDD.svg') # make rc.param no font export
 
         # Display the figure
         plt.tight_layout()
@@ -1087,148 +1026,116 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
     multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
 
 
+
+
 # %%
 
-# 4x4 diffusion plot
-t_values_viz = np.linspace(0, 3, 10)
-visualisation_kernel = [laplacian_exponential_kernel_eigendecomp(weighted_laplacian_matrix(weighted_G_cms_ALL), t) for t in t_values_viz]
-
-
-def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
-    # Load the pickle file
-    with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f: # 'diff_results/Pathway_False_target_BB_GDDs_ks272.pkl'
-        results = pkl.load(f)
-    
-    # with open('results/diff_results/Pathway_False_target_BCGGS_GDDs_ks308_permuNone.pkl', 'rb') as f:
-    #     results = pkl.load(f)
-    
-    time_resolved_kernels =  visualisation_kernel[:5] # results['ACACA'][0.00]['vis_kernels'][:12] # BIRC2
-
-    # Assume 'weighted_G_cms_ALL' is your graph
+# Making an animation of the diffusion process
+def create_diffusion_gif(M, weighted_G, time_resolved_kernels, t_values, node_for_viz, num_frames=75, output_file='results/diff_results/diffusion_animation_hi.gif'):
     node_order = list(weighted_G.nodes())
-    # get indices of nodes that end with '.t'
-    t_indices = [i for i, node in enumerate(node_order) if node.endswith('.t')]
-    #consistent node positions
+    # Add repeated initial frames
+    initial_kernel = time_resolved_kernels[0]
+    initial_t = t_values[0]
+    time_resolved_kernels = list(time_resolved_kernels[:num_frames])
+    t_values = list(t_values[:num_frames])
 
-    orphans = ['ACACA.p', 'MRE11A.p', 'NFKB1.p', 'CTNNA1.p']
-    nodes_with_degree = [node for node in node_order if node not in orphans]
+    # Set up the figure with adjusted subplot sizes
+    fig = plt.figure(figsize=(8, 10))
+    gs = fig.add_gridspec(3, 1)
+    ax_diffusion = fig.add_subplot(gs[:2, 0], projection='3d')
+    ax_gdd = fig.add_subplot(gs[2, 0])
 
-    # Create a subgraph with these nodes
-    subgraph = weighted_G_cms_ALL.subgraph(nodes_with_degree)
-
-    # Now calculate the layout using only the nodes in the subgraph
-    pos = nx.spring_layout(subgraph)
-
-    # print(pos)
-
-    # If you want to use the same positions for the nodes in the original graph, you can do so. 
-    # The orphan nodes will be assigned a default position as they are not included in the subgraph.
+    # Prepare node positions, colors, and sizes
+    orphan_prots = [orph + '.p' for orph in orphan_prots_ALL]
+    nodes_with_degree = [node for node in node_order if node not in orphan_prots]
+    subgraph = weighted_G.subgraph(nodes_with_degree)
+    pos = nx.spring_layout(subgraph, seed=48, weight=0.7, k=2/np.sqrt(154))
     prot_node_positions = pos.copy()
-    for node in weighted_G_cms_ALL.nodes():
+    for node in weighted_G.nodes():
         if node not in prot_node_positions and node.endswith('.p'):
-            prot_node_positions[node] = (0,0)  # or any other default position
+            prot_node_positions[node] = (0,0)
 
-
-    # Set up a 3x3 subplot grid with 3D projection
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(20, 10), subplot_kw={'projection': '3d'})
-    axs = axes.flatten()  # Flatten the axes array for easy iteration
-    # fig.suptitle('Network Diffusion over 25 Time Points')
-    
-
-    # Define the suffixes for each layer
     suffixes = {'PROTEIN': '.p', 'RNA': '.t'}
-
-    # Create an index mapping from the suffixed node name to its index
     node_indices = {node: i for i, node in enumerate(node_order)}
-    node_colors = {}  
-    node_sizes = {} 
+    node_colors = {}
+    node_sizes = {}
     node_coords = {}
-
     for node, pos in prot_node_positions.items():
-        stripped_node = node.rstrip('.p')  # Remove the suffix to match identifiers in M
+        stripped_node = node.rstrip('.p')
         node_coords[stripped_node] = tuple(pos)
-        # node_coords[stripped_node] = (1,1)
 
-
+    # Calculate node sizes based on degree
     max_deg = 28
     min_deg = 1
     max_scaled_size = 3.5
-    for nl in M.iter_node_layers():  # Iterating over all node-layer combinations
-        node, layer = nl  # Split the node-layer tuple
-        neighbors = list(M._iter_neighbors_out(nl, dims=None))  # Get all neighbors for the node-layer tuple
-        degree = len(neighbors)  # The degree is the number of neighbors
+    for nl in M.iter_node_layers():
+        node, layer = nl
+        neighbors = list(M._iter_neighbors_out(nl, dims=None))
+        degree = len(neighbors)
         normalized_degree = (degree - min_deg) / (max_deg - min_deg)
         scaled_degree = 1 + normalized_degree * (max_scaled_size - 1)
+        node_sizes[nl] = scaled_degree * 0.015
 
-        # Assign to node sizes with your scaling factor
-        node_sizes[nl] = scaled_degree * 0.02  # Adjust the scaling factor as needed
-
-
-
-    j = 0
+    # Prepare for diffusion visualization
+    j = 0 # node_order.index(node_for_viz + '.p')
+    e_j = np.zeros(len(weighted_G.nodes()))
+    e_j[j] = 150
     global_max = max(kernel.max() for kernel in time_resolved_kernels)
     norm = Normalize(vmin=0, vmax=1)
-    # print(global_max)
-    # Ensure you have a list of the 25 time-resolved kernels named 'time_resolved_kernels'
-    for idx, (ax, kernel) in enumerate(zip(axs, time_resolved_kernels[:4])):
-        # if idx % 5 == 0:
-        # Create the unit vector e_j with 1 at the jth index and 0 elsewhere
-        e_j = np.zeros(len(weighted_G.nodes()))
-        e_j[j] = 100
 
-        # e_j = np.ones(len(weighted_G_cms_ALL.nodes()))
-        
-        # Multiply the kernel with e_j to simulate diffusion from node j
+    progress_bar = tqdm(total=len(time_resolved_kernels), desc="Creating animation frames")
+
+    def update(frame):
+        ax_diffusion.clear()
+        ax_gdd.clear()
+
+        # Update diffusion state
+        kernel = time_resolved_kernels[frame]
         diffusion_state = kernel @ e_j
-        # order the diffusion state in descending order
-        diffusion_state = sorted(diffusion_state, reverse=True)
 
-        # Now, update node colors and sizes based on diffusion_state
-        for layer in M.iter_layers():  # Iterates through all nodes in M
-            # Determine the layer of the node for color and size settings
+        # Update node colors based on diffusion state
+        for layer in M.iter_layers():
             for node in M.iter_nodes(layer=layer):
-                # Append the appropriate suffix to the node name to match the format in node_order
                 suffixed_node = node + suffixes[layer]
-                # Use the suffixed node name to get the corresponding index from the node_order
                 index = node_indices[suffixed_node]
-
-                # Map the diffusion state to a color and update node_colors and node_sizes
-                color = plt.cm.viridis(diffusion_state[index])  # Mapping color based on diffusion state
+                color = plt.cm.viridis(diffusion_state[index])
                 node_colors[(node, layer)] = color
-                # node_sizes[(node, layer)] = 0.03  # Or some logic to vary size with diffusion state
 
-        # Now use your updated visualization function with the new colors and sizes
-        diff_fig = multiplex_net_viz(M, ax, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
+        # Visualize network
+        multiplex_net_viz(M, ax_diffusion, diff_colors=True, node_colors=node_colors, node_sizes=node_sizes, node_coords=node_coords)
+        ax_diffusion.set_title(f"Diffusion at T = {t_values[frame]:.2f}")
 
-        ax.set_title(f"T = {idx * (6/25):.2f}")
+        # Plot GDD values with updated ylim
+        ax_gdd.plot(t_values[:frame+1], gdd_values_disruptA[:frame+1])
+        ax_gdd.set_xlim(-0.0001, t_values[-1])
+        ax_gdd.set_ylim(0, 1.2)  # Updated ylim to 1.2
+        ax_gdd.set_xlabel('Time')
+        ax_gdd.set_ylabel(r'$\xi$ Value')
+        ax_gdd.axvline(x=t_values[frame], color='red', linestyle='dotted', linewidth=2)
+        
+        # Make the bottom subplot more square
+        ax_gdd.set_aspect(0.5 / ax_gdd.get_data_ratio(), adjustable='box')
 
-    # Adjust layout to prevent overlap
-    # plt.tight_layout()
-    # plt.subplots_adjust(top=0.95)  # Adjust the top space to fit the main title
-    plt.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([1, 0.15, 0.02, 0.7])
-    plt.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=cbar_ax, orientation='vertical', label='Concentration')
-    # savethefigure
-    # plt.savefig('diffusion_figure.png', dpi=600) # make rc.param no font export
+        progress_bar.update(1)
+        return ax_diffusion, ax_gdd
 
-    # Display the figure
-    plt.tight_layout()
-    # save as svg
-    plt.savefig('results/diff_results/diffusion_figure2.svg') # make rc.param no font export
-    plt.show()
+    anim = animation.FuncAnimation(fig, update, frames=len(time_resolved_kernels), interval=100, blit=False)
+    print("Saving animation as GIF...")
+    anim.save(output_file, writer='pillow', fps=10)
+    plt.close(fig)
+    progress_bar.close()
+    print(f"Animation saved as {output_file}")
 
-args.visualize = True
-if args.visualize:
-    multiplex_diff_viz(pymnet_ALL, weighted_G_cms_ALL)
+# Usage example (to be added to your main execution block)
+if __name__ == "__main__" and not "SLURM_JOB_ID" in os.environ:
+    # Load your data (replace this with your actual data loading code)
+    with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
+        results = pkl.load(f)
+    
+    # Extract necessary data
+    time_resolved_kernels = results[node_for_viz][0.05]['vis_kernels']
+    
+    # Create the GIF
+    create_diffusion_gif(pymnet_ALL, weighted_G_cms_ALL, time_resolved_kernels, t_values, node_for_viz)
 
-# %%
-# make a standalone figure of the colorbar
-fig, ax = plt.subplots(figsize=(1, 6), dpi = 300)
-norm = Normalize(vmin=0, vmax=1)
-cbar = fig.colorbar(cm.ScalarMappable(norm=norm, cmap=plt.cm.viridis), cax=ax, orientation='vertical', label='Concentration')
-
-plt.show()
-plt.savefig('colorbar.svg')
-
-
-
+    print("GIF creation complete. Output saved as 'diffusion_animation.gif'")
