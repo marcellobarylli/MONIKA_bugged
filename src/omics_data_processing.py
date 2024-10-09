@@ -151,7 +151,7 @@ def transform_and_test(data_to_trim, dataframe_name):
                 (fig, ax) = plt.subplots()
                 stats.probplot(transformed_data, dist="norm", plot=ax)
                 ax.set_title(f'QQ-plot for {column} (W: {round(new_stat, 3)}, p: {new_p}')
-                plt.show()
+                # plt.show()
     
     return data_to_trim
 
