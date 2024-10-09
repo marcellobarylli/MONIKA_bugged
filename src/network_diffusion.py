@@ -1031,7 +1031,7 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
 # %%
 
 # Making an animation of the diffusion process
-def create_diffusion_gif(M, weighted_G, time_resolved_kernels, t_values, node_for_viz, num_frames=75, output_file='results/diff_results/diffusion_animation_hi.gif'):
+def create_diffusion_gif(M, weighted_G, time_resolved_kernels, t_values, node_for_viz, num_frames=75, output_file='results/diff_results/diffusion_animation.gif'):
     node_order = list(weighted_G.nodes())
     # Add repeated initial frames
     initial_kernel = time_resolved_kernels[0]
@@ -1079,7 +1079,7 @@ def create_diffusion_gif(M, weighted_G, time_resolved_kernels, t_values, node_fo
     # Prepare for diffusion visualization
     j = 0 # node_order.index(node_for_viz + '.p')
     e_j = np.zeros(len(weighted_G.nodes()))
-    e_j[j] = 150
+    e_j[j] = 120
     global_max = max(kernel.max() for kernel in time_resolved_kernels)
     norm = Normalize(vmin=0, vmax=1)
 
