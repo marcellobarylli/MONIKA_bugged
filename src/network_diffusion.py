@@ -1136,3 +1136,4 @@ if __name__ == "__main__" and not "SLURM_JOB_ID" in os.environ:
     create_diffusion_gif(pymnet_ALL, weighted_G_cms_ALL, time_resolved_kernels, t_values, node_for_viz)
 
     print("GIF creation complete. Output saved as 'diffusion_animation.gif'")
+
