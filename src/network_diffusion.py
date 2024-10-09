@@ -51,7 +51,7 @@ if not"SLURM_JOB_ID" in os.environ:
     plt.rc("text", usetex=False)
     plt.rc("font", family="serif")
 
-
+os.makedirs('results/diff_results', exist_ok=True)
 
 if not "SLURM_JOB_ID" in os.environ:
     import pymnet as pn
