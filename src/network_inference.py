@@ -86,7 +86,6 @@ def analysis(data,
         lamlen, 
         edge_counts_all, 
         prior_bool=False,
-        man_param=False,
         adj_matrix=None, 
         run_type='SYNTHETIC',
         omics_type='',
@@ -108,7 +107,6 @@ def analysis(data,
         lamlen: number of lambda values to be tested
         edge_counts_all: edge counts for all lambda values
         prior_bool: boolean value to determine if prior matrix
-        man_param: boolean value to determine if manual lambda is used (ALWAYS FALSE)
         adj_matrix: ground truth network
         run_type: type of data being analysed (SYNTHETIC or OMICS)
         plot: boolean value to determine if plots are generated
@@ -138,12 +136,7 @@ def analysis(data,
 
     # LAMBDAS
     lambda_np, theta_mat = estimate_lambda_np(select_edge_counts_all, Q, select_lambda_range)
-    man = man_param
-    if man:
-        lambda_np =  1
-        if verbose:
-            # print('manually set lambda_np: ', lambda_np)
-            print(f'manual Lambda_np: {man}')
+
     
     if prior_bool == True:
         lambda_wp, tau_tr, mus = estimate_lambda_wp(select_edge_counts_all, Q, select_lambda_range, prior_matrix)
@@ -279,8 +272,9 @@ if __name__ == "__main__":
                             machine='local'
                         )
                     
-                    with open(f'results/net_results/{omics_type}_{cms}_edge_counts_all_pnQ{p}_{n}_{Q}_{lowerbound}_{upperbound}_ll{lamlen}_b{b_perc}_fpfn{fp_fn}_dens{synth_density}_s{seed}.pkl', 'wb') as f:
-                        pickle.dump(edge_counts, f)
+                        # write the file
+                        with open(file_, 'wb') as f:
+                            pickle.dump(omics_edge_counts_all, f)
 
                     
                     # Load Omics Data
@@ -343,7 +337,7 @@ if __name__ == "__main__":
 
                         
                         precision_mat, edge_counts, density, lambda_np, lambda_wp, tau_tr = analysis(cms_array, cms_omics_prior_matrix, p, n, Q, lambda_range, 
-                                    lowerbound, new_upperbound, new_lamlen, sliced_omics_edge_counts_all, prior_bool, man_param=man, run_type='OMICS', omics_type=f'{str.upper(omics_type)}, {cms}', plot=args.plot_omics, verbose=True)
+                                    lowerbound, new_upperbound, new_lamlen, sliced_omics_edge_counts_all, prior_bool, run_type='OMICS', omics_type=f'{str.upper(omics_type)}, {cms}', plot=args.plot_omics, verbose=True)
 
 
 
@@ -370,7 +364,7 @@ if __name__ == "__main__":
 
                             lambda_range = np.linspace(lowerbound, new_upperbound, new_lamlen)
                             precision_mat, edge_counts, density, lambda_np, lambda_wp, tau_tr = analysis(cms_array, cms_omics_prior_matrix, p, n, Q, lambda_range, 
-                                        lowerbound, new_upperbound, new_lamlen, sliced_omics_edge_counts_all, prior_bool, man_param=man, run_type='OMICS', plot=args.plot_omics, verbose=False)
+                                        lowerbound, new_upperbound, new_lamlen, sliced_omics_edge_counts_all, prior_bool, run_type='OMICS', plot=args.plot_omics, verbose=False)
 
                             print(i, new_upperbound, o_t, cms)
                             print(f'lambda_np: {lambda_np}, lambda_wp: {lambda_wp}, density: {density}')
@@ -587,7 +581,7 @@ if __name__ == "__main__":
                 # Run analysis
                 # Currently, analysis including lambda range plotting only if full sweep is done. 
                 _, _, _, lambda_np, lambda_wp, temp_evalu, tau_tr = analysis(synth_data, synth_prior_matrix, p, n, Q, lambda_range, llo, lhi, lamlen, 
-                                                    synth_edge_counts_all, prior_bool=prior_bool, man_param=man, adj_matrix=synth_adj_matrix, run_type='SYNTHETIC', plot=args.plot_synth, verbose=False)
+                                                    synth_edge_counts_all, prior_bool=prior_bool, adj_matrix=synth_adj_matrix, run_type='SYNTHETIC', plot=args.plot_synth, verbose=False)
 
 
 

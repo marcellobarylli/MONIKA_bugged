@@ -591,8 +591,6 @@ else:
 # select only one node for visualization
 rng = np.random.default_rng(69)
 node_for_viz = 'EIF4G1' # rng.choice(nodes_subset)
-print(f'VIZ NODE: {node_for_viz}')
-
 
 # TEST NET
 if args.test_net:
@@ -705,77 +703,84 @@ MPI.Finalize()
 # %% ########################################### Analysis and Visualisation ##########################################
 
 if "SLURM_JOB_ID" not in os.environ:
-
-    #  NODE KNOCKOUT ANALYSIS
-    with open(f'results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
+    # Load data
+    with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
         node_knockouts = pkl.load(f)
 
-    print(f'node_knockouts: {node_knockouts.keys()}')
-    print(f'Reduction factors: {node_knockouts[list(node_knockouts.keys())[0]].keys()}')
-    # print(f'GDD values: {node_knockouts[list(node_knockouts.keys())[0]][0.05]}')
-
-
-    # for key in node_knockouts.keys():
-    #     print(f'node {key}: {node_knockouts[key].keys()}')
-    # Choose the node and t_values for plotting
-    selected_node = np.random.choice(list(node_knockouts.keys()))
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 6), dpi=300)
-
-    # Left plot: GDD values over time for various reductions (single node)
-    for reduction in node_knockouts[selected_node].keys():
-        gdd_values_trans = node_knockouts[selected_node][reduction]['gdd_values_trans']
-        gdd_values_disruptA = node_knockouts[selected_node][reduction]['gdd_values_disruptA']
-        gdd_values_disruptS = node_knockouts[selected_node][reduction]['gdd_values_disruptS']
-        ax1.plot(t_values, gdd_values_trans, label=f'Reduction {reduction}')
-        ax1.plot(t_values, gdd_values_disruptA, label=f'Reduction {reduction} (Disrupt)')
-
-    ax1.set_title(f'GDD Over Time for Various Reductions\nNode: {selected_node}')
-    ax1.set_xlabel('Time')
-    ax1.set_ylabel('GDD Value')
-    ax1.legend()
-    ax1.grid(True)
-
-    # Choose a reduction factor from the list of reductions
-    selected_reduction = red_range[0]
+    # Choose a reduction factor
     selected_reduction = 0.05
 
-    max_gdds_trans = {}
+    # Calculate max_gdds_disruptA for each node
+    max_gdds_disruptA = {}
+    for node_base in node_knockouts.keys():
+        gdd_values_disruptA = node_knockouts[node_base][selected_reduction]['gdd_values_disruptA']
+        max_gdds_disruptA[node_base] = np.max(gdd_values_disruptA)
+
+    # Find nodes with highest and lowest max_gdd_disruptA
+    highest_node = max(max_gdds_disruptA, key=max_gdds_disruptA.get)
+    lowest_node = min(max_gdds_disruptA, key=max_gdds_disruptA.get)
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
+
+    # Plot GDD values for highest and lowest nodes
+    for node in [highest_node, lowest_node]:
+        gdd_values_disruptA = node_knockouts[node][selected_reduction]['gdd_values_disruptA']
+        ax.plot(t_values, gdd_values_disruptA, label=f'Node {node}')
+
+    ax.set_title(rf'$\xi$ Over Time for Highest and Lowest Impact Nodes\nReduction: {selected_reduction}')
+    ax.set_xlabel('Time')
+    ax.set_ylabel(r'$\xi$ Value')
+    ax.legend()
+    ax.set_xlim([0, 3])
+    ax.grid(True)
+
+    # save to file
+    plt.savefig(f'results/diff_results/Top_vs_bottom_gene_GDD.png', dpi=300)
+    # plt.show()
+
+    # Print results
+    print(f"Node with highest impact: {highest_node}, max GDD: {max_gdds_disruptA[highest_node]}")
+    print(f"Node with lowest impact: {lowest_node}, max GDD: {max_gdds_disruptA[lowest_node]}")
+
+    # Preparing the dataframe for the results table
     max_gdds_disruptA = {}
     max_gdds_disruptS = {}
     # Right plot: GDD values over time for a single reduction (all nodes)
     for node_base in node_knockouts.keys():
-        gdd_values_trans = node_knockouts[node_base][selected_reduction]['gdd_values_trans']
         gdd_values_disruptA = node_knockouts[node_base][selected_reduction]['gdd_values_disruptA']
         gdd_values_disruptS = node_knockouts[node_base][selected_reduction]['gdd_values_disruptS']
-        ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base}', alpha=0.5)
-        # ax2.plot(t_values, gdd_values_disruptA, label=f'Node {node_base} (Disrupt)', alpha=0.5)
-        max_gdds_trans[node_base] = np.max(gdd_values_trans)
         max_gdds_disruptA[node_base] = np.max(gdd_values_disruptA)
         max_gdds_disruptS[node_base] = np.max(gdd_values_disruptS)
 
-    ax2.set_title(f'GDD Over Time for Single Reduction\nReduction: {selected_reduction}')
-    ax2.set_xlabel('Time')
-    # ax2.set_ylabel('GDD Value')  # Y-label is shared with the left plot
-    # ax2.legend()
-    ax2.set_xlim([0, 2])
-    ax2.grid(True)
 
-    plt.show()
-
-    # %%
-    # print max_gdds in ascending order
-    sorted_max_gdds_trans = {k: v for k, v in sorted(max_gdds_trans.items(), key=lambda item: item[1])}
+    # get max_gdds in ascending order
     sorted_max_gdds_disruptA = {k: v for k, v in sorted(max_gdds_disruptA.items(), key=lambda item: item[1], reverse=True)}
     sorted_max_gdds_disruptS = {k: v for k, v in sorted(max_gdds_disruptS.items(), key=lambda item: item[1], reverse=True)}
 
-    # add key for original max_gdd (Which is the original distance between the aggresive subtype and stable subtype)
-    sorted_max_gdds_disruptA['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
+    summed_degrees_aggro = {}
+    summed_betweenness_aggro = {}
+    summed_betweenness = {}
+    for node in sorted_max_gdds_disruptA.keys():
+        node_p = node + '.p'
+        node_t = node + '.t'
+        
+        # Accessing the degree for each node directly from the DegreeView
+        degree_p_aggro = weighted_G_cms_ALL.degree(node_p, weight='weight') if node_p in weighted_G_cms_ALL else 0
+        degree_t_aggro = weighted_G_cms_ALL.degree(node_t, weight='weight') if node_t in weighted_G_cms_ALL else 0
 
-    # print original max_gdd 
-    # print(f'Original GDD between aggressive and nonmesenchymal: {max_orig_gdd_values}')
-    # print(f'GDD values of top transition node knockouts (maximum distance decrease): {sorted_max_gdds_trans}')
+        summed_betweenness = nx.betweenness_centrality(weighted_G_cms_ALL, weight='weight')
+        summed_betweenness_aggro[node] = summed_betweenness[node_p] + summed_betweenness[node_t]
+        summed_degree_aggro = degree_p_aggro + degree_t_aggro
 
+    # %%
+    # Make dataframe with node, max_gdd, and summed_degree
+    df = pd.DataFrame.from_dict(sorted_max_gdds_disruptA, orient='index', columns=['max_gdd_disrupt'])
+    df['summed_degree_aggro'] = df.index.map(summed_degrees_aggro)
+    df['summed_betweenness_aggro'] = df.index.map(summed_betweenness_aggro)
+    df = df.sort_values(by='max_gdd_disrupt', ascending=False)
+
+    # Isolating genes that are critical for cmsALL, but not for cms123
     num_top_genes = 10
     # # Print first N items of sorted_max_gdds_disruptA
     print(f'GDD values of top disruptor node knockouts (maximum self-distance increase):')
@@ -783,9 +788,6 @@ if "SLURM_JOB_ID" not in os.environ:
         print(f'{key}: {value}')
 
     print('-------------------')
-
-    # for key, value in list(sorted_max_gdds_disruptS.items())[:num_top_genes]:
-    #     print(f'{key}: {value}')
 
     # print the length of the overlap of the top 10 nodes
     overlap = set(list(sorted_max_gdds_disruptA.keys())[:num_top_genes]).intersection(set(list(sorted_max_gdds_disruptS.keys())[:num_top_genes]))
@@ -796,49 +798,8 @@ if "SLURM_JOB_ID" not in os.environ:
         if key not in overlap:
             print(f'{key}: {value}')
 
-
-
-    # %%
-    summed_degrees = {}
-    summed_degrees_aggro = {}
-    summed_betweenness = {}
-    summed_betweenness_aggro = {}
-    for node in sorted_max_gdds_trans.keys():
-        node_p = node + '.p'
-        node_t = node + '.t'
-        
-        # Accessing the degree for each node directly from the DegreeView
-        degree_p_aggro = weighted_G_cms_ALL.degree(node_p, weight='weight') if node_p in weighted_G_cms_ALL else 0
-        degree_t_aggro = weighted_G_cms_ALL.degree(node_t, weight='weight') if node_t in weighted_G_cms_ALL else 0
-        degree_p_stable = weighted_G_cms_123.degree(node_p, weight='weight') if node_p in weighted_G_cms_123 else 0
-        degree_t_stable = weighted_G_cms_123.degree(node_t, weight='weight') if node_t in weighted_G_cms_123 else 0
-
-        summed_betweenness = nx.betweenness_centrality(weighted_G_cms_ALL, weight='weight')
-        summed_betweenness_aggro[node] = summed_betweenness[node_p] + summed_betweenness[node_t]
-        
-        summed_degree_aggro = degree_p_aggro + degree_t_aggro
-        summed_degree_stable = degree_p_stable + degree_t_stable
-        summed_degrees[node] = summed_degree_aggro + summed_degree_stable / 4
-        summed_degrees_aggro[node] = summed_degree_aggro / 4
-
-
-    # Make dataframe with node, max_gdd, and summed_degree
-    df = pd.DataFrame.from_dict(sorted_max_gdds_trans, orient='index', columns=['max_gdd_trans'])
-    # add row with original max_gdd
-    df.loc['ORIGINAL_MAX_GDD'] = max_orig_gdd_values
-
-    df['max_gdd_disrupt'] = sorted_max_gdds_disruptA.values()
-    # make column with max_gdd delta
-    df['max_gdd_delta_trans'] = df['max_gdd_trans'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
-    df['max_gdd_delta_disrupt'] = df['max_gdd_disrupt'] - df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
-    # make column with max_gdd / original_max_gdd
-    # df['max_gdd_ratio_trans'] = df['max_gdd_trans'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_trans']
-    # df['max_gdd_ratio_disrupt'] = df['max_gdd_disrupt'] / df.loc['ORIGINAL_MAX_GDD', 'max_gdd_disrupt']
-    df['summed_degree'] = df.index.map(summed_degrees)
-    df['summed_degree_aggro'] = df.index.map(summed_degrees_aggro)
-    df['summed_betweenness_aggro'] = df.index.map(summed_betweenness_aggro)
-    df = df.sort_values(by='max_gdd_trans', ascending=True)
-
+    top_disruptA = set(list(sorted_max_gdds_disruptA.keys())[:num_top_genes])
+    df['cmsALL-critical'] = df.index.map(lambda x: x if x in top_disruptA and x not in overlap else np.nan)
 
     # write to file
     df.to_csv(f'results/diff_results/NODE_KNOCKOUTS_RESULTS_symmetric{args.symmetric}_{args.net_dens}.csv', index=True)
@@ -852,6 +813,18 @@ if "SLURM_JOB_ID" not in os.environ:
 if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
     # VISUALIZE MULTIPLEX NETWORK
     def multiplex_net_viz(M, ax, diff_colors=False, node_colors=None, node_sizes=None, node_coords=None):
+        """
+        Uses the pymnet library to create a 3D visualisation of the multiplex network.
+        params:
+            M: Multiplex network
+            ax: Matplotlib axis to plot on
+            diff_colors: Boolean to use diffusion colors
+            node_colors: Dictionary of node colors
+            node_sizes: Dictionary of node sizes
+            node_coords: Dictionary of node coordinates
+        returns:
+            fig: Matplotlib figure
+        """
 
         dark_red = "#8B0000"  # Dark red color
         dark_blue = "#00008B"  # Dark blue color
@@ -901,6 +874,17 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
 
     # %%
     def multiplex_diff_viz(M, weighted_G, ax=None, node_colors=None, node_sizes=None):
+        """
+        Visualizes the multiplex network with diffusion colors, for 3 timesteps, along with tracking the Eta values.
+        params:
+            M: Multiplex network
+            weighted_G: Weighted graph
+            ax: Matplotlib axis to plot on
+            node_colors: Dictionary of node colors
+            node_sizes: Dictionary of node sizes
+        returns:
+            fig: Matplotlib figure
+        """
         # Load the pickle file
         with open('results/diff_results/LOCAL_Pathway_False_target__GDDs_ks308_permuNone_symmetricTrue_low_dens_5,26.pkl', 'rb') as f:
             results = pkl.load(f)
@@ -1032,6 +1016,19 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
 
 # Making an animation of the diffusion process
 def create_diffusion_gif(M, weighted_G, time_resolved_kernels, t_values, node_for_viz, num_frames=75, output_file='results/diff_results/diffusion_animation.gif'):
+    """
+    Creates an animation of the diffusion process in the multiplex network.
+    params:
+        M: Multiplex network
+        weighted_G: Weighted graph
+        time_resolved_kernels: List of diffusion kernels at different time points
+        t_values: List of time points
+        node_for_viz: Node to visualize
+        num_frames: Number of frames to include in the animation
+        output_file: Output file path
+    returns:
+        None
+    """
     node_order = list(weighted_G.nodes())
     # Add repeated initial frames
     initial_kernel = time_resolved_kernels[0]

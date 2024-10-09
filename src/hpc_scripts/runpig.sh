@@ -14,7 +14,7 @@ module load 2022
 module load R/4.2.1-foss-2022a
 source /sw/arch/RHEL8/EB_production/2022/software/Anaconda3/2022.05/etc/profile.d/conda.sh
 conda activate monika # replace with your own filepath to your conda env
-cd /home/mbarylli/MONIKA/src # replace with your own filepath to MONIKA
+cd /home/user/MONIKA/src # replace with your own filepath to MONIKA
 
 # Define the parameters for each task
 case $SLURM_ARRAY_TASK_ID in
