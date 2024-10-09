@@ -858,7 +858,7 @@ if "SLURM_JOB_ID" not in os.environ and args.visualize == True:
                 # nodeSizeRule={"rule":"degree", "scalecoeff":0.00001},
                 nodeCoords=node_coords,
                 edgeColorDict=edge_colors,
-                edgeweight=0.7,
+                # edgeweight=0.7,
                 defaultEdgeAlpha=0.08,
                 layerColorDict=layer_colors,
                 defaultLayerAlpha=0.075,
